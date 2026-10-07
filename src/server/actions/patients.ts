@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { Role } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { writeAuditLog } from "@/lib/audit/write-audit-log";
 import { requireRoles } from "@/lib/auth/authorization";
 import {
   patientInputFromFormData,
@@ -24,7 +25,7 @@ export async function createPatientAction(
   _previousState: PatientActionState,
   formData: FormData,
 ): Promise<PatientActionState> {
-  await requireRoles(...patientRoles);
+  const user = await requireRoles(...patientRoles);
 
   const result = validatePatientInput(patientInputFromFormData(formData));
   if (!result.success) {
@@ -35,7 +36,18 @@ export async function createPatientAction(
   }
 
   try {
-    await prisma.patient.create({ data: result.data });
+    await prisma.$transaction(async (tx) => {
+      const patient = await tx.patient.create({
+        data: result.data,
+        select: { id: true },
+      });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "PATIENT_CREATED",
+        entity: "Patient",
+        entityId: patient.id,
+      });
+    });
   } catch {
     return { message: "Hasta kaydedilirken bir hata oluştu." };
   }
@@ -48,7 +60,7 @@ export async function updatePatientAction(
   _previousState: PatientActionState,
   formData: FormData,
 ): Promise<PatientActionState> {
-  await requireRoles(...patientRoles);
+  const user = await requireRoles(...patientRoles);
 
   const patientId = readId(formData);
   if (!patientId) return { message: INVALID_ID_MESSAGE };
@@ -62,10 +74,18 @@ export async function updatePatientAction(
   }
 
   try {
-    await prisma.patient.update({
-      where: { id: patientId },
-      data: result.data,
-      select: { id: true },
+    await prisma.$transaction(async (tx) => {
+      const patient = await tx.patient.update({
+        where: { id: patientId },
+        data: result.data,
+        select: { id: true },
+      });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "PATIENT_UPDATED",
+        entity: "Patient",
+        entityId: patient.id,
+      });
     });
   } catch {
     return { message: "Hasta bilgileri kaydedilirken bir hata oluştu." };
@@ -79,7 +99,7 @@ export async function updatePatientAction(
 export async function setPatientActiveAction(
   formData: FormData,
 ): Promise<void> {
-  await requireRoles(...patientRoles);
+  const user = await requireRoles(...patientRoles);
 
   const patientId = readId(formData);
   const activeValue = formData.get("active");
@@ -88,10 +108,27 @@ export async function setPatientActiveAction(
   }
 
   try {
-    await prisma.patient.update({
-      where: { id: patientId },
-      data: { isActive: activeValue === "true" },
-      select: { id: true },
+    const isActive = activeValue === "true";
+    await prisma.$transaction(async (tx) => {
+      const patient = await tx.patient.findUnique({
+        where: { id: patientId },
+        select: { isActive: true },
+      });
+      if (!patient) throw new Error("PATIENT_NOT_FOUND");
+      if (patient.isActive === isActive) return;
+
+      await tx.patient.update({
+        where: { id: patientId },
+        data: { isActive },
+        select: { id: true },
+      });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "PATIENT_STATUS_CHANGED",
+        entity: "Patient",
+        entityId: patientId,
+        metadata: { isActive },
+      });
     });
   } catch {
     redirect(`/patients/${patientId}?error=update`);

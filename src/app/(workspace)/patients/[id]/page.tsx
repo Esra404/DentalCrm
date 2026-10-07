@@ -14,11 +14,15 @@ function HistorySection({
   emptyMessage,
   count,
   icon: Icon,
+  documentsHref,
+  addDocumentHref,
 }: {
   title: string;
   emptyMessage: string;
   count: number;
   icon: typeof CalendarDays;
+  documentsHref?: string;
+  addDocumentHref?: string;
 }) {
   return (
     <section className="rounded-md border border-[var(--line)] bg-white p-5">
@@ -31,6 +35,22 @@ function HistorySection({
       <p className="mt-4 text-sm text-[var(--muted)]">
         {count === 0 ? emptyMessage : `${count} kayıt bulunuyor.`}
       </p>
+      {documentsHref && addDocumentHref ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            className="inline-flex min-h-9 items-center rounded-md border border-[var(--line)] bg-white px-3 text-sm font-medium text-[var(--ink)] outline-none hover:bg-[var(--canvas)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            href={documentsHref}
+          >
+            Belgeleri Görüntüle
+          </Link>
+          <Link
+            className="inline-flex min-h-9 items-center rounded-md bg-[var(--accent-strong)] px-3 text-sm font-medium text-white outline-none hover:bg-[#19483f] focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            href={addDocumentHref}
+          >
+            Belge Ekle
+          </Link>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -186,6 +206,8 @@ export default async function PatientDetailPage({
           emptyMessage="Bu hastaya ait henüz belge bulunmuyor."
           icon={FileText}
           title="Belgeler"
+          documentsHref={`/patients/${patient.id}/documents`}
+          addDocumentHref={`/patients/${patient.id}/documents/new`}
         />
       </section>
     </div>

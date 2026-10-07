@@ -1,3 +1,6 @@
+export const PATIENT_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const PATIENT_PHONE_PATTERN = "^\\+?[0-9\\s\\x28\\x29.\\x2d]{7,24}$";
 
 export type PatientFormInput = {

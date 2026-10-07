@@ -47,6 +47,7 @@ model User {
   doctor    Doctor?
   patient   Patient?
   auditLogs AuditLog[]
+  documents PatientDocument[]
   createdAt DateTime   @default(now()) @db.Timestamptz(3)
   updatedAt DateTime   @updatedAt @db.Timestamptz(3)
 }
@@ -101,6 +102,7 @@ model Treatment {
   currency     String              @default("TRY") @db.Char(3)
   isActive     Boolean             @default(true)
   planItems    TreatmentPlanItem[]
+  appointments Appointment[]
   createdAt    DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime            @updatedAt @db.Timestamptz(3)
 }
@@ -112,6 +114,8 @@ model TreatmentPlan {
   status            TreatmentPlanStatus @default(DRAFT)
   currency          String              @default("TRY") @db.Char(3)
   notes             String?             @db.Text
+  startsAt          DateTime?           @db.Date
+  endsAt            DateTime?           @db.Date
   patient           Patient             @relation(fields: [patientId], references: [id], onDelete: Restrict)
   createdByDoctor   Doctor?             @relation(fields: [createdByDoctorId], references: [id], onDelete: Restrict)
   items             TreatmentPlanItem[]
@@ -143,18 +147,21 @@ model Appointment {
   id        String            @id @default(uuid()) @db.Uuid
   patientId String            @db.Uuid
   doctorId  String            @db.Uuid
+  treatmentId String?         @db.Uuid
   startsAt  DateTime          @db.Timestamptz(3)
   endsAt    DateTime          @db.Timestamptz(3)
   status    AppointmentStatus @default(SCHEDULED)
   note      String?           @db.Text
   patient   Patient           @relation(fields: [patientId], references: [id], onDelete: Restrict)
   doctor    Doctor            @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+  treatment Treatment?        @relation(fields: [treatmentId], references: [id], onDelete: Restrict)
   createdAt DateTime          @default(now()) @db.Timestamptz(3)
   updatedAt DateTime          @updatedAt @db.Timestamptz(3)
 
   @@index([doctorId, startsAt])
   @@index([patientId, startsAt])
   @@index([status, startsAt])
+  @@index([treatmentId])
 }
 
 model Payment {
@@ -180,9 +187,14 @@ model PatientDocument {
   mimeType        String   @db.VarChar(127)
   sizeBytes       BigInt
   uploadedAt      DateTime @default(now()) @db.Timestamptz(3)
+  uploadedByUserId String?  @db.Uuid
+  deletedAt       DateTime? @db.Timestamptz(3)
   patient         Patient  @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  uploadedBy      User?    @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
 
   @@index([patientId, uploadedAt])
+  @@index([uploadedByUserId, uploadedAt])
+  @@index([patientId, deletedAt, uploadedAt])
 }
 
 model AuditLog {

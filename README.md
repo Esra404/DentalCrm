@@ -16,6 +16,18 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Hasta Belgeleri
+
+Hasta dosyaları PostgreSQL'e veya `public` klasörüne yazılmaz; yerel geliştirmede
+`.private-storage/patient-documents` dizininde saklanır. Bu dizin Git tarafından
+yok sayılır. Yükleme yalnızca PDF, JPEG ve PNG dosyalarını (en fazla 10 MB)
+kabul eder. Hasta belgesi alanları için veritabanı migration'ı uygulanmadan
+belge ekranlarını kullanmayın.
+
+Bu yerel dosya deposu üretim ortamı için dayanıklı bir storage çözümü değildir.
+Üretimde uygulamanın private ve kalıcı bir volume ile çalıştırılması veya ayrıca
+onaylanmış bir storage sağlayıcısına geçilmesi gerekir.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
