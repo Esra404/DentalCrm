@@ -209,11 +209,11 @@ export function TreatmentPlanForm({
         </div>
         <div className="mt-4 flex flex-col gap-4">
           {rows.map((row, index) => (
-            <div className="grid gap-3 rounded-md border border-[var(--line)] p-3 md:grid-cols-[minmax(0,2fr)_minmax(7rem,1fr)_minmax(5rem,0.7fr)_minmax(8rem,1fr)_auto]" key={row.key}>
-              <label className="flex flex-col gap-2 text-sm font-medium text-[var(--ink)]" htmlFor={`treatment-${row.key}`}>
+            <div className="grid min-w-0 grid-cols-1 gap-3 rounded-md border border-[var(--line)] p-3 sm:grid-cols-2 xl:grid-cols-12" key={row.key}>
+              <label className="flex min-w-0 flex-col gap-2 text-sm font-medium text-[var(--ink)] sm:col-span-2 xl:col-span-5" htmlFor={`treatment-${row.key}`}>
                 Tedavi
                 <select
-                  className={inputClass}
+                  className={`${inputClass} max-w-full`}
                   id={`treatment-${row.key}`}
                   onChange={(event) => changeTreatment(row.key, event.currentTarget.value)}
                   required
@@ -227,7 +227,7 @@ export function TreatmentPlanForm({
                   ))}
                 </select>
               </label>
-              <label className="flex flex-col gap-2 text-sm font-medium text-[var(--ink)]" htmlFor={`tooth-${row.key}`}>
+              <label className="flex min-w-0 flex-col gap-2 text-sm font-medium text-[var(--ink)] xl:col-span-2" htmlFor={`tooth-${row.key}`}>
                 Diş (FDI)
                 <select
                   className={inputClass}
@@ -246,7 +246,7 @@ export function TreatmentPlanForm({
                   })}
                 </select>
               </label>
-              <label className="flex flex-col gap-2 text-sm font-medium text-[var(--ink)]" htmlFor={`quantity-${row.key}`}>
+              <label className="flex min-w-0 flex-col gap-2 text-sm font-medium text-[var(--ink)] xl:col-span-1" htmlFor={`quantity-${row.key}`}>
                 Adet
                 <input
                   className={inputClass}
@@ -259,23 +259,28 @@ export function TreatmentPlanForm({
                   value={row.quantity}
                 />
               </label>
-              <div className="flex flex-col gap-2 text-sm font-medium text-[var(--ink)]">
-                <span>Birim Fiyat</span>
-                <span className="flex min-h-11 items-center rounded-md border border-[var(--line)] bg-[#f6f8f7] px-3 text-sm font-normal text-[var(--muted)]">
-                  {row.unitPrice ? `${row.unitPrice} ${row.currency}` : "Tedavi seçin"}
+              <div className="flex min-w-0 flex-col gap-2 text-sm font-medium text-[var(--ink)] xl:col-span-2">
+                <span>Fiyat Özeti</span>
+                <span className="flex min-h-11 flex-col justify-center rounded-md border border-[var(--line)] bg-[#f6f8f7] px-3 py-2 text-xs font-normal text-[var(--muted)]">
+                  <span>Birim: {row.unitPrice ? `${row.unitPrice} ${row.currency}` : "Tedavi seçin"}</span>
+                  <span className="font-semibold text-[var(--ink)]">
+                    Satır: {row.unitPrice
+                      ? `${new Intl.NumberFormat("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(row.unitPrice) * row.quantity)} ${row.currency}`
+                      : "—"}
+                  </span>
                 </span>
               </div>
-              <p className="mt-3 text-xs text-[var(--muted)]">
-                Diş numarası seçmek için önce hastanın diş kaydında bu dişin durumunu kaydedin.
-              </p>
               <button
                 aria-label={`${index + 1}. tedavi kalemini çıkar`}
-                className="inline-flex min-h-11 items-center justify-center rounded-md px-3 text-sm font-medium text-red-700 outline-none hover:bg-red-50 focus-visible:ring-2 focus-visible:ring-red-500"
+                className="inline-flex min-h-11 w-full items-center justify-center self-end rounded-md px-3 text-sm font-medium text-red-700 outline-none hover:bg-red-50 focus-visible:ring-2 focus-visible:ring-red-500 xl:col-span-2"
                 onClick={() => setRows((current) => current.filter((item) => item.key !== row.key))}
                 type="button"
               >
                 Çıkar
               </button>
+              <p className="text-xs leading-5 text-[var(--muted)] sm:col-span-2 xl:col-span-12">
+                Diş numarası seçmek için önce hastanın diş kaydında bu dişin durumunu kaydedin.
+              </p>
             </div>
           ))}
           {rows.length === 0 ? <p className="text-sm text-[var(--muted)]">Henüz tedavi kalemi eklenmedi.</p> : null}

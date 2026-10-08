@@ -6,8 +6,13 @@ import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/auth/authorization";
 import { getActiveDoctorId } from "@/lib/auth/doctor-access";
 
-export default async function NewTreatmentPlanPage() {
+export default async function NewTreatmentPlanPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ patientId?: string }>;
+}) {
   const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
+  const params = await searchParams;
   const doctorId =
     user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
   const [patients, treatments] = await Promise.all([
@@ -45,8 +50,14 @@ export default async function NewTreatmentPlanPage() {
             Plan oluşturmak için en az bir aktif hasta ve aktif tedavi kaydı bulunmalıdır.
           </p>
         ) : null}
+        {treatments.some((treatment) => Number(treatment.defaultPrice) === 0) ? (
+          <p className="mb-6 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">
+            Sıfır fiyatlı aktif tedaviler bulunuyor. Plan oluşturmadan önce klinik fiyatlarınızı Tedaviler bölümünde kontrol edin.
+          </p>
+        ) : null}
         <TreatmentPlanForm
           mode="create"
+          patientId={patients.some((patient) => patient.id === params.patientId) ? params.patientId : ""}
           patients={patients.map((patient) => ({
             id: patient.id,
             name: `${patient.firstName} ${patient.lastName}`,

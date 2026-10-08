@@ -6,6 +6,7 @@ import { PaymentForm } from "@/components/payments/payment-form";
 import { formatMoney, sumPlanItems } from "@/lib/finance/decimal";
 import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/auth/authorization";
+import { patientSearchWhere } from "@/lib/search/patient-search";
 import { PAYMENT_ID_PATTERN } from "@/lib/validations/payment";
 
 export default async function EditPaymentPage({
@@ -37,14 +38,7 @@ export default async function EditPaymentPage({
     where: query
       ? {
           patient: {
-            is: {
-              OR: [
-                { firstName: { contains: query, mode: "insensitive" } },
-                { lastName: { contains: query, mode: "insensitive" } },
-                { phone: { contains: query } },
-                { email: { contains: query, mode: "insensitive" } },
-              ],
-            },
+            is: patientSearchWhere(query),
           },
         }
       : {},

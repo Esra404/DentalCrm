@@ -5,24 +5,22 @@ import { AppointmentForm } from "@/components/appointments/appointment-form";
 import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/auth/authorization";
 import {
-  doctorPatientWhere,
   getActiveDoctorId,
+  doctorPatientWhere,
 } from "@/lib/auth/doctor-access";
 
 export default async function NewAppointmentPage() {
   const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
   const doctorId =
     user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
-  const [patients, doctors, treatments] = await Promise.all([
-    prisma.patient.findMany({
+  const [patientCount, doctors, treatments] = await Promise.all([
+    prisma.patient.count({
       where: {
         isActive: true,
         ...(user.role === Role.DOCTOR
           ? doctorPatientWhere(doctorId)
           : {}),
       },
-      select: { id: true, firstName: true, lastName: true, doctorId: true },
-      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
     prisma.doctor.findMany({
       where: {
@@ -53,7 +51,7 @@ export default async function NewAppointmentPage() {
         <p className="mt-2 text-sm text-[var(--muted)]">Aktif hasta, doktor ve tedavi seçerek randevu oluşturun.</p>
       </header>
       <section className="rounded-md border border-[var(--line)] bg-white p-5 sm:p-7">
-        {patients.length === 0 || doctors.length === 0 || treatments.length === 0 ? (
+        {patientCount === 0 || doctors.length === 0 || treatments.length === 0 ? (
           <p className="mb-6 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">
             Randevu oluşturmak için en az bir aktif hasta, doktor ve tedavi kaydı bulunmalıdır.
           </p>
@@ -65,12 +63,7 @@ export default async function NewAppointmentPage() {
             isActive: true,
           }))}
           mode="create"
-          patients={patients.map((patient) => ({
-            id: patient.id,
-            label: `${patient.firstName} ${patient.lastName}`,
-            isActive: true,
-            doctorId: patient.doctorId,
-          }))}
+          patients={[]}
           treatments={treatments.map((treatment) => ({
             id: treatment.id,
             label: treatment.name,

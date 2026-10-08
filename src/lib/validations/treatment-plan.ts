@@ -80,7 +80,7 @@ export function parseTreatmentPlanItems(
   }
 
   const items: TreatmentPlanItemInput[] = [];
-  const treatmentIds = new Set<string>();
+  const treatmentKeys = new Set<string>();
   for (const entry of parsed) {
     if (!entry || typeof entry !== "object") {
       return { success: false, message: "Tedavi kalemlerini kontrol edin." };
@@ -107,13 +107,14 @@ export function parseTreatmentPlanItems(
         message: "Tedavi ve adet bilgilerini kontrol edin.",
       };
     }
-    if (treatmentIds.has(item.treatmentId)) {
+    const treatmentKey = `${item.treatmentId}:${item.toothNumber ?? "none"}`;
+    if (treatmentKeys.has(treatmentKey)) {
       return {
         success: false,
-        message: "Aynı tedaviyi bir plana birden fazla satır olarak ekleyemezsiniz.",
+        message: "Aynı tedaviyi aynı dişe birden fazla satır olarak ekleyemezsiniz.",
       };
     }
-    treatmentIds.add(item.treatmentId);
+    treatmentKeys.add(treatmentKey);
     items.push({
       itemId: typeof item.itemId === "string" ? item.itemId : undefined,
       treatmentId: item.treatmentId,

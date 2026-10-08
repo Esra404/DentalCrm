@@ -2,18 +2,25 @@ import { prisma } from "../src/lib/prisma";
 
 const LOCAL_DATABASE_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 const DEFAULT_TREATMENTS = [
-  ["Muayene", "Klinik muayene"],
-  ["Diş Taşı Temizliği", "Diş taşı ve plak temizliği"],
-  ["Kompozit Dolgu", "Kompozit restorasyon"],
-  ["Kanal Tedavisi", "Endodontik kanal tedavisi"],
-  ["Diş Çekimi", "Basit diş çekimi"],
-  ["Cerrahi Diş Çekimi", "Cerrahi diş çekimi"],
-  ["Porselen Kuron", "Porselen kuron restorasyonu"],
-  ["Zirkonyum Kuron", "Zirkonyum kuron restorasyonu"],
-  ["İmplant", "Dental implant uygulaması"],
-  ["Diş Beyazlatma", "Profesyonel diş beyazlatma"],
-  ["Ortodontik Kontrol", "Ortodontik kontrol randevusu"],
-  ["Geçici Dolgu", "Geçici restorasyon"],
+  ["Diş Beyazlatma", "Estetik · Profesyonel diş beyazlatma uygulaması."],
+  ["Dijital Gülüş Tasarımı", "Estetik · Dijital analiz ve gülüş tasarımı."],
+  ["Diş Eti Estetiği", "Periodonti · Diş eti estetiği ve şekillendirme."],
+  ["Porselen Kaplama", "Protez · Porselen kron restorasyonu."],
+  ["Zirkonyum Kaplama", "Protez · Zirkonyum kron restorasyonu."],
+  ["Diş Köprüsü", "Protez · Sabit köprü protezi uygulaması."],
+  ["Diş İmplantı", "İmplant · Dental implant uygulaması."],
+  ["Tek Diş İmplantı", "İmplant · Tek diş için implant uygulaması."],
+  ["Çoklu Diş İmplantı", "İmplant · Birden fazla diş için implant uygulaması."],
+  ["All-on-4", "İmplant · Dört implant destekli tam çene tedavi seçeneği."],
+  ["All-on-6", "İmplant · Altı implant destekli tam çene tedavi seçeneği."],
+  ["Diş Protezi", "Protez · Hareketli veya sabit diş protezi uygulaması."],
+  ["Ortodonti", "Ortodonti · Diş ve çene kapanış bozukluklarının tedavisi."],
+  ["Kanal Tedavisi", "Endodonti · Diş pulpası ve kök kanalı tedavisi."],
+  ["Diş Çekimi", "Cerrahi · Diş çekimi uygulaması."],
+  ["Çene Cerrahisi", "Cerrahi · Ağız ve çene cerrahisi işlemi."],
+  ["Diş Taşı Temizliği", "Periodonti · Diş taşı ve plak temizliği."],
+  ["Pedodonti", "Çocuk Diş · Çocuk hastalara yönelik diş hekimliği hizmeti."],
+  ["Lazer Diş Hekimliği", "Diğer · Lazer destekli diş hekimliği uygulaması."],
 ] as const;
 
 function assertLocalDevelopmentDatabase(): void {
@@ -32,12 +39,27 @@ function assertLocalDevelopmentDatabase(): void {
   }
 
   const databaseName = decodeURIComponent(databaseUrl.pathname.replace(/^\//, ""));
-  if (
+  const isNotLocalDevelopmentDatabase =
     !["postgres:", "postgresql:"].includes(databaseUrl.protocol) ||
     !LOCAL_DATABASE_HOSTS.has(databaseUrl.hostname) ||
-    databaseName !== "dental_crm"
-  ) {
-    throw new Error("Treatment catalogue seeding only permits local dental_crm.");
+    databaseName !== "dental_crm";
+  const explicitlyAllowedNeonDatabase =
+    process.env.ALLOW_NEON_TREATMENT_SEED === "true" &&
+    ["postgres:", "postgresql:"].includes(databaseUrl.protocol) &&
+    databaseUrl.hostname.endsWith(".neon.tech") &&
+    databaseName === "neondb";
+
+  if (isNotLocalDevelopmentDatabase && !explicitlyAllowedNeonDatabase) {
+    if (
+      ["postgres:", "postgresql:"].includes(databaseUrl.protocol) &&
+      LOCAL_DATABASE_HOSTS.has(databaseUrl.hostname) &&
+      databaseName === "dental_crm"
+    ) {
+      return;
+    }
+    throw new Error(
+      "Treatment catalogue seeding requires local dental_crm or explicit Neon neondb opt-in.",
+    );
   }
 }
 
@@ -47,19 +69,19 @@ async function main(): Promise<void> {
   for (const [name, description] of DEFAULT_TREATMENTS) {
     await prisma.treatment.upsert({
       where: { name },
-      update: {},
+      update: { isActive: true },
       create: {
         name,
         description,
         defaultPrice: "0.00",
         currency: "TRY",
-        isActive: false,
+        isActive: true,
       },
     });
   }
 
   console.info(
-    `Seeded ${DEFAULT_TREATMENTS.length} default treatments as inactive. Set clinic prices before activating them.`,
+    `Seeded ${DEFAULT_TREATMENTS.length} active default treatments at 0.00 TRY. Set clinic prices before creating plans.`,
   );
 }
 

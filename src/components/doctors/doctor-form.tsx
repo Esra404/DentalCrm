@@ -13,6 +13,10 @@ import {
   type DoctorFieldErrors,
   type DoctorFormInput,
 } from "@/lib/validations/doctor";
+import {
+  DOCTOR_SPECIALTIES,
+  isDoctorSpecialty,
+} from "@/lib/constants/doctor-specialties";
 
 type DoctorFormProps = {
   mode: "create" | "edit";
@@ -80,15 +84,26 @@ export function DoctorForm({ mode, doctorId, initialValues }: DoctorFormProps) {
           required
           value={values.lastName}
         />
-        <Field
-          errors={errors}
-          id="specialty"
-          inputClass={inputClass}
-          label="Uzmanlık"
-          maxLength={120}
-          name="specialty"
-          value={values.specialty}
-        />
+        <label className="flex flex-col gap-2 text-sm font-medium text-[var(--ink)]" htmlFor="specialty">
+          Uzmanlık Alanı
+          <select
+            aria-describedby={errors.specialty ? "specialty-error" : undefined}
+            aria-invalid={Boolean(errors.specialty)}
+            className={inputClass}
+            defaultValue={values.specialty}
+            id="specialty"
+            name="specialty"
+          >
+            <option value="">Uzmanlık belirtilmedi</option>
+            {!isDoctorSpecialty(values.specialty) && values.specialty ? (
+              <option value={values.specialty}>{values.specialty} (mevcut değer)</option>
+            ) : null}
+            {DOCTOR_SPECIALTIES.map((specialty) => (
+              <option key={specialty} value={specialty}>{specialty}</option>
+            ))}
+          </select>
+          {errors.specialty ? <span className="text-sm font-normal text-red-700" id="specialty-error" role="alert">{errors.specialty}</span> : null}
+        </label>
         <Field
           errors={errors}
           id="phone"

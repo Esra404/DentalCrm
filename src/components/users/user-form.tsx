@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import { createUserAction } from "@/server/actions/users";
+import { DOCTOR_SPECIALTIES } from "@/lib/constants/doctor-specialties";
 import type {
   CreateUserActionState,
   CreateUserFieldErrors,
@@ -45,12 +46,16 @@ export function UserForm() {
           {errors.role ? <FieldError>{errors.role}</FieldError> : null}
         </label>
         {role === "DOCTOR" ? (
-          <Field
-            errors={errors}
-            id="specialty"
-            label="Uzmanlık (isteğe bağlı)"
-            maxLength={120}
-          />
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-[var(--ink)]" htmlFor="specialty">
+            Uzmanlık Alanı
+            <select className={inputClass} defaultValue="" id="specialty" name="specialty">
+              <option value="">Uzmanlık belirtilmedi</option>
+              {DOCTOR_SPECIALTIES.map((specialty) => (
+                <option key={specialty} value={specialty}>{specialty}</option>
+              ))}
+            </select>
+            {errors.specialty ? <FieldError>{errors.specialty}</FieldError> : null}
+          </label>
         ) : null}
       </div>
       <p className="text-xs leading-5 text-[var(--muted)]">

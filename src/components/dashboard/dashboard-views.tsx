@@ -313,7 +313,7 @@ export function AdminDashboard({
   data: AdminDashboardData;
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
       <DashboardHeader name={name} role="ADMIN" />
       <section aria-label="Klinik modülleri" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricLinkCard action="Hastaları Gör" href="/patients" icon={UsersRound} label="Toplam Hasta" value={data.patientCount} />
@@ -348,7 +348,7 @@ export function DoctorDashboard({
   data: DoctorDashboardData;
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
       <DashboardHeader name={name} role="DOCTOR" />
       {!data.doctorFound ? (
         <p className="rounded-md border border-[#e7d7a7] bg-[#fbf6e8] px-4 py-3 text-sm text-[#715b22]">
@@ -409,7 +409,7 @@ export function StaffDashboard({
   data: StaffDashboardData;
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
       <DashboardHeader name={name} role="STAFF" />
       <section aria-label="Klinik operasyon özeti" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <MetricLinkCard action="Hastaları Gör" href="/patients" icon={UsersRound} label="Toplam Hasta" value={data.patientCount} />

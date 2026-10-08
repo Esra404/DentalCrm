@@ -3,6 +3,7 @@ import { ArrowRight, Eye, Plus, Search, UserRoundPen } from "lucide-react";
 import { Prisma } from "@/generated/prisma/client";
 import { Role } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { patientSearchWhere } from "@/lib/search/patient-search";
 import { requireRoles } from "@/lib/auth/authorization";
 import { getActiveDoctorId } from "@/lib/auth/doctor-access";
 
@@ -51,26 +52,7 @@ export default async function PatientsPage({ searchParams }: PatientsPageProps) 
   const requestedCursor = getSingleValue(params.cursor);
   const cursor = UUID_PATTERN.test(requestedCursor) ? requestedCursor : "";
   const created = getSingleValue(params.created) === "1";
-  const terms = query.split(/\s+/).filter(Boolean).slice(0, 5);
-
-  const queryWhere: Prisma.PatientWhereInput = query
-    ? {
-        OR: [
-          { firstName: { contains: query, mode: "insensitive" } },
-          { lastName: { contains: query, mode: "insensitive" } },
-          { phone: { contains: query } },
-          { email: { contains: query, mode: "insensitive" } },
-          {
-            AND: terms.map((term) => ({
-              OR: [
-                { firstName: { contains: term, mode: "insensitive" as const } },
-                { lastName: { contains: term, mode: "insensitive" as const } },
-              ],
-            })),
-          },
-        ],
-      }
-    : {};
+  const queryWhere = patientSearchWhere(query);
   const doctorId =
     user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
   const doctorWhere: Prisma.PatientWhereInput =
@@ -108,7 +90,7 @@ export default async function PatientsPage({ searchParams }: PatientsPageProps) 
       : null;
 
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
       <header className="flex flex-col gap-4 border-b border-[var(--line)] pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">

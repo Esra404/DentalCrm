@@ -41,7 +41,7 @@ export function AppShell({ user, children }: AppShellProps) {
           user={user}
         />
         <main
-          className="mx-auto min-h-[calc(100dvh-4.5rem)] w-full max-w-[1440px] px-4 py-6 sm:px-6 sm:py-8 lg:px-9"
+          className="mx-auto min-h-[calc(100dvh-4.5rem)] w-full max-w-[1600px] min-w-0 px-4 py-6 sm:px-6 sm:py-8 lg:px-9"
           id="main-content"
         >
           {children}

@@ -9,6 +9,7 @@ import {
   paymentDateInputValue,
 } from "@/lib/validations/payment";
 import { requireRoles } from "@/lib/auth/authorization";
+import { patientSearchWhere } from "@/lib/search/patient-search";
 
 export default async function NewPaymentPage({
   searchParams,
@@ -26,14 +27,7 @@ export default async function NewPaymentPage({
     where: query
       ? {
           patient: {
-            is: {
-              OR: [
-                { firstName: { contains: query, mode: "insensitive" } },
-                { lastName: { contains: query, mode: "insensitive" } },
-                { phone: { contains: query } },
-                { email: { contains: query, mode: "insensitive" } },
-              ],
-            },
+            is: patientSearchWhere(query),
           },
         }
       : {},

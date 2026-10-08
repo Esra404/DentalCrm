@@ -213,6 +213,18 @@ async function writePlan(
           await tx.treatmentPlanItem.deleteMany({
             where: { treatmentPlanId: current.id, id: { in: removedIds } },
           });
+          for (const removedItem of current.items.filter((item) => removedIds.includes(item.id))) {
+            await writeAuditLog(tx, {
+              userId,
+              action: "TREATMENT_PLAN_ITEM_DELETED",
+              entity: "TreatmentPlan",
+              entityId: current.id,
+              metadata: {
+                itemId: removedItem.id,
+                treatmentName: removedItem.treatmentName,
+              },
+            });
+          }
         }
         for (const item of resolvedItems) {
           if (item.itemId) {
@@ -224,7 +236,7 @@ async function writePlan(
               },
             });
           } else {
-            await tx.treatmentPlanItem.create({
+            const createdItem = await tx.treatmentPlanItem.create({
               data: {
                 treatmentPlanId: current.id,
                 treatmentId: item.treatmentId,
@@ -232,6 +244,19 @@ async function writePlan(
                 quantity: item.quantity,
                 unitPrice: item.unitPrice,
                 patientToothId: item.patientToothId,
+              },
+              select: { id: true },
+            });
+            await writeAuditLog(tx, {
+              userId,
+              action: "TREATMENT_PLAN_ITEM_ADDED",
+              entity: "TreatmentPlan",
+              entityId: current.id,
+              metadata: {
+                itemId: createdItem.id,
+                treatmentId: item.treatmentId,
+                treatmentName: item.treatmentName,
+                toothNumber: item.toothNumber,
               },
             });
           }
@@ -266,7 +291,10 @@ async function writePlan(
             })),
           },
         },
-        select: { id: true },
+        select: {
+          id: true,
+          items: { select: { id: true, treatmentId: true, treatmentName: true, patientToothId: true } },
+        },
       });
       await writeAuditLog(tx, {
         userId,
@@ -274,6 +302,20 @@ async function writePlan(
         entity: "TreatmentPlan",
         entityId: plan.id,
       });
+      for (const item of plan.items) {
+        await writeAuditLog(tx, {
+          userId,
+          action: "TREATMENT_PLAN_ITEM_ADDED",
+          entity: "TreatmentPlan",
+          entityId: plan.id,
+          metadata: {
+            itemId: item.id,
+            treatmentId: item.treatmentId,
+            treatmentName: item.treatmentName,
+            patientToothId: item.patientToothId,
+          },
+        });
+      }
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );

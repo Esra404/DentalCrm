@@ -7,8 +7,10 @@ import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/auth/authorization";
 import {
   canDoctorAccessPatient,
+  doctorPatientWhere,
   getActiveDoctorId,
 } from "@/lib/auth/doctor-access";
+import { patientSearchWhere } from "@/lib/search/patient-search";
 import { getChangedFields } from "@/lib/audit/changed-fields";
 import { writeAuditLog } from "@/lib/audit/write-audit-log";
 import {
@@ -21,6 +23,39 @@ import {
 } from "@/lib/validations/appointment";
 
 const appointmentRoles = [Role.ADMIN, Role.STAFF, Role.DOCTOR] as const;
+
+export async function searchAppointmentPatients(query: string): Promise<
+  { id: string; label: string; doctorId: string | null; isActive: true }[]
+> {
+  const user = await requireRoles(...appointmentRoles);
+  if (typeof query !== "string" || query.trim().length > 120) {
+    throw new Error("Hasta arama metni geçersiz.");
+  }
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) return [];
+
+  const doctorId =
+    user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
+  const patients = await prisma.patient.findMany({
+    where: {
+      AND: [
+        { isActive: true },
+        ...(user.role === Role.DOCTOR ? [doctorPatientWhere(doctorId)] : []),
+        patientSearchWhere(normalizedQuery),
+      ],
+    },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { id: "asc" }],
+    take: 10,
+    select: { id: true, firstName: true, lastName: true, doctorId: true },
+  });
+
+  return patients.map((patient) => ({
+    id: patient.id,
+    label: `${patient.firstName} ${patient.lastName}`,
+    doctorId: patient.doctorId,
+    isActive: true,
+  }));
+}
 
 type RelatedEntity = "patientId" | "doctorId" | "treatmentId";
 

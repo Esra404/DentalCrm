@@ -7,6 +7,7 @@ import { TREATMENT_PLAN_ID_PATTERN } from "@/lib/validations/treatment-plan";
 import { formatMoney, sumPlanItems } from "@/lib/finance/decimal";
 import { requireRoles } from "@/lib/auth/authorization";
 import { getActiveDoctorId } from "@/lib/auth/doctor-access";
+import { patientSearchWhere } from "@/lib/search/patient-search";
 
 const PAGE_SIZE = 25;
 const STATUS_LABELS: Record<TreatmentPlanStatus, string> = {
@@ -62,14 +63,7 @@ export default async function TreatmentPlansPage({
       ...(query
         ? [{
             patient: {
-              is: {
-                OR: [
-                  { firstName: { contains: query, mode: "insensitive" as const } },
-                  { lastName: { contains: query, mode: "insensitive" as const } },
-                  { phone: { contains: query } },
-                  { email: { contains: query, mode: "insensitive" as const } },
-                ],
-              },
+              is: patientSearchWhere(query),
             },
           }]
         : []),
@@ -126,7 +120,7 @@ export default async function TreatmentPlansPage({
   if (nextCursor) nextParams.set("cursor", nextCursor);
 
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
       <header className="flex flex-col gap-4 border-b border-[var(--line)] pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">İşlemler</p>

@@ -1,5 +1,6 @@
 import { Role } from "@/generated/prisma/enums";
 import type { Role as RoleType } from "@/generated/prisma/enums";
+import { isDoctorSpecialty } from "@/lib/constants/doctor-specialties";
 
 export type CreateUserFormInput = {
   firstName: string;
@@ -81,8 +82,14 @@ export function validateCreateUserInput(input: CreateUserFormInput):
     : null;
   if (!role) errors.role = "Doktor veya çalışan rolü seçin.";
 
-  if (specialty.length > 120) {
+  if (role === Role.DOCTOR && specialty.length > 120) {
     errors.specialty = "Uzmanlık en fazla 120 karakter olabilir.";
+  } else if (
+    role === Role.DOCTOR &&
+    specialty &&
+    !isDoctorSpecialty(specialty)
+  ) {
+    errors.specialty = "Listeden geçerli bir uzmanlık alanı seçin.";
   }
 
   const name = `${firstName} ${lastName}`;
@@ -101,7 +108,7 @@ export function validateCreateUserInput(input: CreateUserFormInput):
       email,
       password: input.password,
       role,
-      specialty: specialty || null,
+      specialty: role === Role.DOCTOR ? specialty || null : null,
     },
   };
 }

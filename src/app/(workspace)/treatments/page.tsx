@@ -1,10 +1,13 @@
 import Link from "next/link";
-import { Eye, Plus, Search, UserRoundPen } from "lucide-react";
+import { Eye, Plus, Trash2, UserRoundPen } from "lucide-react";
 import { Prisma } from "@/generated/prisma/client";
 import { Role } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { TREATMENT_ID_PATTERN } from "@/lib/validations/treatment";
 import { requireRoles } from "@/lib/auth/authorization";
+import { deleteTreatmentAction, setTreatmentActiveAction } from "@/server/actions/treatments";
+import { TreatmentSearchForm } from "@/components/treatments/treatment-search-form";
+import { insensitiveSearchVariants } from "@/lib/search/patient-search";
 
 const PAGE_SIZE = 25;
 const TREATMENT_SELECT = {
@@ -27,6 +30,7 @@ export default async function TreatmentsPage({
     q?: string | string[];
     cursor?: string | string[];
     created?: string | string[];
+    deleted?: string | string[];
     error?: string | string[];
   }>;
 }) {
@@ -38,8 +42,10 @@ export default async function TreatmentsPage({
   const where: Prisma.TreatmentWhereInput = query
     ? {
         OR: [
-          { name: { contains: query, mode: "insensitive" } },
-          { description: { contains: query, mode: "insensitive" } },
+          ...insensitiveSearchVariants(query).flatMap((term) => [
+            { name: { contains: term, mode: "insensitive" as const } },
+            { description: { contains: term, mode: "insensitive" as const } },
+          ]),
         ],
       }
     : {};
@@ -71,7 +77,7 @@ export default async function TreatmentsPage({
   if (nextCursor) nextParams.set("cursor", nextCursor);
 
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
       <header className="flex flex-col gap-4 border-b border-[var(--line)] pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">Klinik</p>
@@ -85,17 +91,12 @@ export default async function TreatmentsPage({
       </header>
 
       {getValue(params.created) === "1" ? <p className="rounded-md border border-[#c7ded6] bg-[#e9f4ef] px-4 py-3 text-sm text-[#245b50]">Tedavi kaydı oluşturuldu.</p> : null}
+      {getValue(params.deleted) === "1" ? <p className="rounded-md border border-[#c7ded6] bg-[#e9f4ef] px-4 py-3 text-sm text-[#245b50]">Tedavi kaydı silindi.</p> : null}
       {getValue(params.error) === "invalid" ? <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">Tedavi işlemi tamamlanamadı. Lütfen tekrar deneyin.</p> : null}
+      {getValue(params.error) === "used" ? <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">Randevularda veya tedavi planlarında kullanılan tedavi silinemez; kullanımını kapatmak için pasifleştirin.</p> : null}
+      {getValue(params.error) === "delete" ? <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">Tedavi silinirken bir hata oluştu.</p> : null}
 
-      <form action="/treatments" className="flex flex-col gap-3 sm:flex-row" method="get" role="search">
-        <label className="relative block min-w-0 flex-1">
-          <span className="sr-only">Tedavi ara</span>
-          <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={17} />
-          <input className="min-h-11 w-full rounded-md border border-[var(--line)] bg-white pl-10 pr-3 text-sm text-[var(--ink)] outline-none placeholder:text-[#83928d] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15" defaultValue={query} maxLength={120} name="q" placeholder="Tedavi adı veya açıklama ile ara..." type="search" />
-        </label>
-        <button className="inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium text-[var(--ink)] outline-none hover:bg-[var(--canvas)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]" type="submit">Ara</button>
-        {query ? <Link className="inline-flex min-h-11 items-center justify-center rounded-md px-3 text-sm font-medium text-[var(--muted)] outline-none hover:bg-white focus-visible:ring-2 focus-visible:ring-[var(--accent)]" href="/treatments">Temizle</Link> : null}
-      </form>
+      <TreatmentSearchForm key={query} query={query} />
 
       {loadError ? (
         <p className="rounded-md border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800" role="alert">Tedaviler yüklenirken bir hata oluştu.</p>
@@ -107,27 +108,52 @@ export default async function TreatmentsPage({
         </section>
       ) : (
         <>
-          <div className="overflow-hidden rounded-md border border-[var(--line)] bg-white">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] border-collapse text-left text-sm">
-                <caption className="sr-only">Kayıtlı tedaviler</caption>
-                <thead className="bg-[#f6f8f7] text-xs font-semibold text-[var(--muted)]"><tr><th className="px-4 py-3.5" scope="col">Tedavi Adı</th><th className="px-4 py-3.5" scope="col">Açıklama</th><th className="px-4 py-3.5" scope="col">Birim Fiyat</th><th className="px-4 py-3.5" scope="col">Durum</th><th className="px-4 py-3.5 text-right" scope="col">İşlemler</th></tr></thead>
-                <tbody className="divide-y divide-[var(--line)]">
-                  {treatments.map((treatment) => (
-                    <tr className="hover:bg-[#fbfcfb]" key={treatment.id}>
-                      <th className="px-4 py-4 font-medium text-[var(--ink)]" scope="row"><Link className="rounded-sm outline-none hover:text-[var(--accent-strong)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]" href={`/treatments/${treatment.id}`}>{treatment.name}</Link></th>
-                      <td className="max-w-80 truncate px-4 py-4 text-[var(--muted)]">{treatment.description || "—"}</td>
-                      <td className="px-4 py-4 text-[var(--muted)]">{new Intl.NumberFormat("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(treatment.defaultPrice))} {treatment.currency}</td>
-                      <td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${treatment.isActive ? "bg-[#e8f3ed] text-[#28634f]" : "bg-[#edf0ef] text-[#5f6e68]"}`}>{treatment.isActive ? "Aktif" : "Pasif"}</span></td>
-                      <td className="px-4 py-4"><div className="flex justify-end gap-1">
-                        <Link aria-label={`${treatment.name} detayını görüntüle`} className="inline-flex size-9 items-center justify-center rounded-md text-[var(--muted)] outline-none hover:bg-[var(--accent-soft)] hover:text-[var(--accent-strong)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]" href={`/treatments/${treatment.id}`}><Eye aria-hidden="true" size={17} /></Link>
-                        <Link aria-label={`${treatment.name} bilgilerini düzenle`} className="inline-flex size-9 items-center justify-center rounded-md text-[var(--muted)] outline-none hover:bg-[var(--accent-soft)] hover:text-[var(--accent-strong)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]" href={`/treatments/${treatment.id}/edit`}><UserRoundPen aria-hidden="true" size={17} /></Link>
-                      </div></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {treatments.map((treatment) => (
+              <article className="flex min-w-0 flex-col rounded-md border border-[var(--line)] bg-white p-5" key={treatment.id}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <Link className="min-w-0 break-words text-base font-semibold text-[var(--ink)] underline-offset-4 hover:text-[var(--accent-strong)] hover:underline" href={`/treatments/${treatment.id}`}>
+                    {treatment.name}
+                  </Link>
+                  <span className={`inline-flex shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${treatment.isActive ? "bg-[#e8f3ed] text-[#28634f]" : "bg-[#edf0ef] text-[#5f6e68]"}`}>
+                    {treatment.isActive ? "Aktif" : "Pasif"}
+                  </span>
+                </div>
+                <p className="mt-3 min-h-10 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--muted)]">
+                  {treatment.description || "Açıklama bulunmuyor."}
+                </p>
+                <p className="mt-4 break-words text-sm font-semibold text-[var(--ink)]">
+                  Birim fiyat: {new Intl.NumberFormat("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(treatment.defaultPrice))} {treatment.currency}
+                </p>
+                <div className="mt-auto flex flex-wrap gap-2 border-t border-[var(--line)] pt-4">
+                  <Link className="inline-flex min-h-9 flex-1 items-center justify-center gap-2 rounded-md border border-[var(--line)] px-3 text-sm font-medium text-[var(--ink)] outline-none hover:bg-[var(--canvas)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]" href={`/treatments/${treatment.id}`}>
+                    <Eye aria-hidden="true" size={16} />Detay
+                  </Link>
+                  <Link className="inline-flex min-h-9 flex-1 items-center justify-center gap-2 rounded-md border border-[var(--line)] px-3 text-sm font-medium text-[var(--ink)] outline-none hover:bg-[var(--canvas)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]" href={`/treatments/${treatment.id}/edit`}>
+                    <UserRoundPen aria-hidden="true" size={16} />Düzenle
+                  </Link>
+                  <form action={setTreatmentActiveAction} className="flex min-w-0 flex-1">
+                    <input name="treatmentId" type="hidden" value={treatment.id} />
+                    <input name="active" type="hidden" value={String(!treatment.isActive)} />
+                    <button className="min-h-9 w-full rounded-md border border-[var(--line)] px-3 text-sm font-medium text-[var(--ink)] outline-none hover:bg-[var(--canvas)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]" type="submit">
+                      {treatment.isActive ? "Pasifleştir" : "Aktifleştir"}
+                    </button>
+                  </form>
+                  <details className="relative min-w-0 flex-1">
+                    <summary className="flex min-h-9 cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-red-200 px-3 text-sm font-medium text-red-700 outline-none hover:bg-red-50 focus-visible:ring-2 focus-visible:ring-red-500 [&::-webkit-details-marker]:hidden">
+                      <Trash2 aria-hidden="true" size={15} />Sil
+                    </summary>
+                    <form action={deleteTreatmentAction} className="absolute right-0 top-full z-20 mt-2 w-48 rounded-md border border-red-200 bg-white p-3 shadow-lg">
+                      <input name="treatmentId" type="hidden" value={treatment.id} />
+                      <p className="mb-2 text-xs leading-5 text-[var(--muted)]">Kullanılmayan tedavi kalıcı olarak silinir.</p>
+                      <button className="min-h-9 w-full rounded-md bg-red-700 px-2 text-xs font-semibold text-white outline-none hover:bg-red-800 focus-visible:ring-2 focus-visible:ring-red-500" type="submit">
+                        Silmeyi onayla
+                      </button>
+                    </form>
+                  </details>
+                </div>
+              </article>
+            ))}
           </div>
           {hasMore && nextCursor ? <div className="flex justify-center"><Link className="inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium text-[var(--ink)] outline-none hover:bg-[var(--canvas)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]" href={`/treatments?${nextParams.toString()}`}>Daha fazla yükle</Link></div> : null}
         </>

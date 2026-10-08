@@ -7,6 +7,7 @@ import { APPOINTMENT_TIME_ZONE, parseAppointmentLocalDateTime } from "@/lib/vali
 import { formatMoney } from "@/lib/finance/decimal";
 import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/auth/authorization";
+import { patientSearchWhere } from "@/lib/search/patient-search";
 
 const PAGE_SIZE = 25;
 
@@ -67,14 +68,7 @@ export default async function PaymentsPage({
           treatmentPlan: {
             is: {
               patient: {
-                is: {
-                  OR: [
-                    { firstName: { contains: query, mode: "insensitive" } },
-                    { lastName: { contains: query, mode: "insensitive" } },
-                    { phone: { contains: query } },
-                    { email: { contains: query, mode: "insensitive" } },
-                  ],
-                },
+                is: patientSearchWhere(query),
               },
             },
           },
@@ -134,7 +128,7 @@ export default async function PaymentsPage({
   if (nextCursor) nextParams.set("cursor", nextCursor);
 
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
       <header className="flex flex-col gap-4 border-b border-[var(--line)] pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">İşlemler</p>
@@ -144,16 +138,16 @@ export default async function PaymentsPage({
         <Link className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-md bg-[var(--accent-strong)] px-4 text-sm font-semibold text-white outline-none hover:bg-[#19483f] focus-visible:ring-2 focus-visible:ring-[var(--accent)] sm:self-auto" href="/payments/new"><Plus aria-hidden="true" size={17} />Yeni Ödeme</Link>
       </header>
       {getValue(params.created) === "1" ? <p className="rounded-md border border-[#c7ded6] bg-[#e9f4ef] px-4 py-3 text-sm text-[#245b50]">Ödeme kaydı oluşturuldu.</p> : null}
-      <form action="/payments" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_12rem_12rem_auto]" method="get" role="search">
-        <label className="relative block min-w-0 sm:col-span-2 lg:col-span-1">
+      <form action="/payments" className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(18rem,1fr)_12rem_12rem_auto]" method="get" role="search">
+        <label className="relative block min-w-0 sm:col-span-2 xl:col-span-1">
           <span className="sr-only">Hasta ara</span>
           <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={17} />
-          <input className="min-h-11 w-full rounded-md border border-[var(--line)] bg-white pl-10 pr-3 text-sm text-[var(--ink)] outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15" defaultValue={query} maxLength={120} name="q" placeholder="Hasta adı, telefon veya e-posta ara..." type="search" />
+          <input className="min-h-11 w-full min-w-0 rounded-md border border-[var(--line)] bg-white pl-10 pr-3 text-sm text-[var(--ink)] outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15" defaultValue={query} maxLength={120} name="q" placeholder="Hasta adı, telefon veya e-posta ara..." type="search" />
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">Ödeme Tarihi<input className="min-h-11 rounded-md border border-[var(--line)] bg-white px-3 text-sm text-[var(--ink)]" defaultValue={date} name="date" type="date" /></label>
         <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">Yöntem<select className="min-h-11 rounded-md border border-[var(--line)] bg-white px-3 text-sm text-[var(--ink)]" defaultValue={method ?? ""} name="method"><option value="">Tüm yöntemler</option>{Object.values(PaymentMethod).map((item) => <option key={item} value={item}>{PAYMENT_METHOD_LABELS[item]}</option>)}</select></label>
         {validPlanId ? <input name="planId" type="hidden" value={validPlanId} /> : null}
-        <button className="inline-flex min-h-11 items-center justify-center self-end rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium text-[var(--ink)] outline-none hover:bg-[var(--canvas)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]" type="submit">Filtrele</button>
+        <button className="inline-flex min-h-11 w-full items-center justify-center self-end rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium text-[var(--ink)] outline-none hover:bg-[var(--canvas)] focus-visible:ring-2 focus-visible:ring-[var(--accent)] sm:w-auto" type="submit">Filtrele</button>
       </form>
       {loadError ? (
         <p className="rounded-md border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800" role="alert">Ödemeler yüklenirken bir hata oluştu.</p>

@@ -49,7 +49,14 @@ export default async function EditTreatmentPlanPage({
 
   const [activePatients, activeTreatments] = await Promise.all([
     prisma.patient.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        ...(user.role === Role.DOCTOR
+          ? {
+              doctorId: doctorId ?? "00000000-0000-0000-0000-000000000000",
+            }
+          : {}),
+      },
       select: { id: true, firstName: true, lastName: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),

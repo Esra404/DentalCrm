@@ -5,6 +5,7 @@ import { Role } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { DOCTOR_ID_PATTERN } from "@/lib/validations/doctor";
 import { requireRoles } from "@/lib/auth/authorization";
+import { insensitiveSearchVariants } from "@/lib/search/patient-search";
 
 const PAGE_SIZE = 25;
 const DOCTOR_SELECT = {
@@ -37,20 +38,23 @@ export default async function DoctorsPage({
   const rawCursor = getValue(params.cursor);
   const cursor = DOCTOR_ID_PATTERN.test(rawCursor) ? rawCursor : "";
   const terms = query.split(/\s+/).filter(Boolean).slice(0, 5);
+  const variants = insensitiveSearchVariants(query);
   const where: Prisma.DoctorWhereInput = query
     ? {
         OR: [
-          { firstName: { contains: query, mode: "insensitive" } },
-          { lastName: { contains: query, mode: "insensitive" } },
-          { specialty: { contains: query, mode: "insensitive" } },
+          ...variants.flatMap((term) => [
+            { firstName: { contains: term, mode: "insensitive" as const } },
+            { lastName: { contains: term, mode: "insensitive" as const } },
+            { specialty: { contains: term, mode: "insensitive" as const } },
+            { email: { contains: term, mode: "insensitive" as const } },
+          ]),
           { phone: { contains: query } },
-          { email: { contains: query, mode: "insensitive" } },
           {
             AND: terms.map((term) => ({
-              OR: [
-                { firstName: { contains: term, mode: "insensitive" as const } },
-                { lastName: { contains: term, mode: "insensitive" as const } },
-              ],
+              OR: insensitiveSearchVariants(term).flatMap((variant) => [
+                { firstName: { contains: variant, mode: "insensitive" as const } },
+                { lastName: { contains: variant, mode: "insensitive" as const } },
+              ]),
             })),
           },
         ],
@@ -84,7 +88,7 @@ export default async function DoctorsPage({
   if (nextCursor) nextParams.set("cursor", nextCursor);
 
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
       <header className="flex flex-col gap-4 border-b border-[var(--line)] pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">Klinik</p>
@@ -131,7 +135,7 @@ export default async function DoctorsPage({
                 <thead className="bg-[#f6f8f7] text-xs font-semibold text-[var(--muted)]"><tr><th className="px-4 py-3.5" scope="col">Ad Soyad</th><th className="px-4 py-3.5" scope="col">Uzmanlık</th><th className="px-4 py-3.5" scope="col">Telefon</th><th className="px-4 py-3.5" scope="col">E-posta</th><th className="px-4 py-3.5" scope="col">Durum</th><th className="px-4 py-3.5 text-right" scope="col">İşlemler</th></tr></thead>
                 <tbody className="divide-y divide-[var(--line)]">
                   {doctors.map((doctor) => {
-                    const name = `${doctor.firstName} ${doctor.lastName}`;
+                    const name = `Dr. ${doctor.firstName} ${doctor.lastName}`;
                     return (
                       <tr className="hover:bg-[#fbfcfb]" key={doctor.id}>
                         <th className="px-4 py-4 font-medium text-[var(--ink)]" scope="row"><Link className="rounded-sm outline-none hover:text-[var(--accent-strong)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]" href={`/doctors/${doctor.id}`}>{name}</Link></th>

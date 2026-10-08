@@ -50,7 +50,13 @@ export default async function TreatmentPlanDetailPage({
     },
     include: {
       patient: {
-        select: { firstName: true, lastName: true, phone: true, email: true },
+        select: {
+          firstName: true,
+          lastName: true,
+          phone: true,
+          email: true,
+          doctor: { select: { firstName: true, lastName: true } },
+        },
       },
       items: {
         select: {
@@ -76,7 +82,7 @@ export default async function TreatmentPlanDetailPage({
   const createdAt = formatDate(plan.createdAt);
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
       <header className="flex flex-col gap-5 border-b border-[var(--line)] pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <Link className="mb-4 inline-flex min-h-9 items-center gap-2 rounded-sm text-sm font-medium text-[var(--muted)] outline-none hover:text-[var(--accent-strong)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]" href="/treatment-plans">
@@ -95,8 +101,9 @@ export default async function TreatmentPlanDetailPage({
 
       <section aria-labelledby="plan-patient-title" className="rounded-md border border-[var(--line)] bg-white p-5 sm:p-7">
         <h2 className="border-b border-[var(--line)] pb-4 text-base font-semibold text-[var(--ink)]" id="plan-patient-title">Hasta Bilgileri</h2>
-        <dl className="mt-5 grid gap-5 sm:grid-cols-3">
+        <dl className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <Detail label="Ad Soyad" value={`${plan.patient.firstName} ${plan.patient.lastName}`} />
+          <Detail label="Sorumlu Doktor" value={plan.patient.doctor ? `Dr. ${plan.patient.doctor.firstName} ${plan.patient.doctor.lastName}` : "Atanmamış"} />
           <Detail label="Telefon" value={plan.patient.phone || "Belirtilmedi"} />
           <Detail label="E-posta" value={plan.patient.email || "Belirtilmedi"} />
         </dl>

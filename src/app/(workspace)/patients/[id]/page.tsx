@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, CalendarDays, ClipboardList, CreditCard, FileText, Pencil, Smile } from "lucide-react";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
-import { Role, ToothStatus } from "@/generated/prisma/enums";
+import { Role, ToothStatus, TreatmentPlanStatus } from "@/generated/prisma/enums";
 import { requireRoles } from "@/lib/auth/authorization";
 import { canDoctorAccessPatient } from "@/lib/auth/doctor-access";
 import { setPatientActiveAction } from "@/server/actions/patients";
-import { PatientToothForm } from "@/components/patients/patient-tooth-form";
+import { PatientToothChart } from "@/components/patients/patient-tooth-chart";
+import { formatMoney, sumPlanItems } from "@/lib/finance/decimal";
 
 function formatDate(value: Date | null): string {
   if (!value) return "Belirtilmedi";
@@ -22,6 +24,14 @@ const TOOTH_STATUS_LABELS: Record<ToothStatus, string> = {
   MISSING: "Eksik",
   IMPLANT: "İmplant",
   EXTRACTION_RECOMMENDED: "Çekim önerildi",
+};
+
+const PLAN_STATUS_LABELS: Record<TreatmentPlanStatus, string> = {
+  DRAFT: "Taslak",
+  APPROVED: "Onaylandı",
+  IN_PROGRESS: "Devam Ediyor",
+  COMPLETED: "Tamamlandı",
+  CANCELLED: "İptal Edildi",
 };
 
 function HistorySection({
@@ -106,7 +116,7 @@ export default async function PatientDetailPage({
       isActive: true,
       createdAt: true,
       doctorId: true,
-      doctor: { select: { firstName: true, lastName: true } },
+      doctor: { select: { firstName: true, lastName: true, specialty: true } },
       teeth: {
         orderBy: { toothNumber: "asc" },
         select: {
@@ -163,11 +173,20 @@ export default async function PatientDetailPage({
       select: {
         id: true,
         status: true,
+        currency: true,
         startsAt: true,
         endsAt: true,
         createdAt: true,
         createdByDoctor: { select: { firstName: true, lastName: true } },
-        items: { select: { treatmentName: true, patientTooth: { select: { toothNumber: true } } } },
+        items: {
+          select: {
+            treatmentName: true,
+            quantity: true,
+            unitPrice: true,
+            patientTooth: { select: { toothNumber: true } },
+          },
+        },
+        payments: { select: { amount: true } },
       },
     }),
     prisma.payment.findMany({
@@ -187,7 +206,7 @@ export default async function PatientDetailPage({
   const fullName = `${patient.firstName} ${patient.lastName}`;
 
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
       <header className="flex flex-col gap-5 border-b border-[var(--line)] pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <Link
@@ -250,9 +269,14 @@ export default async function PatientDetailPage({
             <dt className="text-xs font-medium text-[var(--muted)]">Sorumlu Doktor</dt>
             <dd className="mt-1 text-sm font-medium text-[var(--ink)]">
               {patient.doctor ? (
-                <Link className="text-[var(--accent-strong)] underline-offset-4 hover:underline" href={`/doctors/${patient.doctorId}`}>
-                  Dr. {patient.doctor.firstName} {patient.doctor.lastName}
-                </Link>
+                <>
+                  <Link className="text-[var(--accent-strong)] underline-offset-4 hover:underline" href={`/doctors/${patient.doctorId}`}>
+                    Dr. {patient.doctor.firstName} {patient.doctor.lastName}
+                  </Link>
+                  <span className="mt-1 block text-xs font-normal text-[var(--muted)]">
+                    {patient.doctor.specialty || "Uzmanlık belirtilmemiş"}
+                  </span>
+                </>
               ) : "Atanmamış"}
             </dd>
           </div>
@@ -267,6 +291,56 @@ export default async function PatientDetailPage({
         </dl>
       </section>
 
+      <section aria-labelledby="patient-plans-title" className="rounded-md border border-[var(--line)] bg-white p-5 sm:p-7">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--line)] pb-4">
+          <div>
+            <h2 className="text-base font-semibold text-[var(--ink)]" id="patient-plans-title">Tedavi Planları ve Finans Özeti</h2>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Sorumlu doktor: {patient.doctor ? `Dr. ${patient.doctor.firstName} ${patient.doctor.lastName} · ${patient.doctor.specialty || "Uzmanlık belirtilmemiş"}` : "Atanmamış"}
+            </p>
+          </div>
+          <Link className="inline-flex min-h-9 items-center justify-center rounded-md bg-[var(--accent-strong)] px-3 text-sm font-semibold text-white outline-none hover:bg-[#19483f] focus-visible:ring-2 focus-visible:ring-[var(--accent)]" href={`/treatment-plans/new?patientId=${patient.id}`}>
+            Tedavi Planları
+          </Link>
+        </div>
+        {treatmentPlans.length === 0 ? (
+          <p className="mt-4 text-sm text-[var(--muted)]">Bu hasta için henüz tedavi planı oluşturulmamış.</p>
+        ) : (
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {treatmentPlans.map((plan) => {
+              const total = sumPlanItems(plan.items);
+              const paid = plan.payments.reduce(
+                (sum, payment) => sum.plus(payment.amount),
+                new Prisma.Decimal(0),
+              );
+              const remaining = total.minus(paid);
+              return (
+                <article className="min-w-0 rounded-md border border-[var(--line)] p-4" key={plan.id}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <Link className="break-words text-sm font-semibold text-[var(--accent-strong)] underline-offset-4 hover:underline" href={`/treatment-plans/${plan.id}`}>
+                        Tedavi Planı · {formatDate(plan.startsAt ?? plan.createdAt)}
+                      </Link>
+                      <p className="mt-1 text-xs text-[var(--muted)]">
+                        {patient.doctor ? `Dr. ${patient.doctor.firstName} ${patient.doctor.lastName} · ${patient.doctor.specialty || "Uzmanlık belirtilmemiş"}` : "Sorumlu doktor atanmamış"}
+                      </p>
+                    </div>
+                    <span className="inline-flex shrink-0 rounded-full bg-[var(--accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--accent-strong)]">
+                      {PLAN_STATUS_LABELS[plan.status]}
+                    </span>
+                  </div>
+                  <dl className="mt-4 grid grid-cols-1 gap-3 border-t border-[var(--line)] pt-4 sm:grid-cols-3">
+                    <Detail label="Toplam" value={formatMoney(total, plan.currency)} />
+                    <Detail label="Ödenen" value={formatMoney(paid, plan.currency)} />
+                    <Detail label="Kalan" value={formatMoney(remaining, plan.currency)} />
+                  </dl>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
       <section aria-labelledby="patient-teeth-title" className="rounded-md border border-[var(--line)] bg-white p-5 sm:p-7">
         <div className="border-b border-[var(--line)] pb-4">
           <h2 className="text-base font-semibold text-[var(--ink)]" id="patient-teeth-title">Diş Durumu (FDI)</h2>
@@ -274,52 +348,18 @@ export default async function PatientDetailPage({
         </div>
         {patient.doctor ? (
           <p className="mt-4 text-sm text-[var(--muted)]">
-            Sorumlu doktor: Dr. {patient.doctor.firstName} {patient.doctor.lastName}
+            Sorumlu doktor: Dr. {patient.doctor.firstName} {patient.doctor.lastName} · {patient.doctor.specialty || "Uzmanlık belirtilmemiş"}
           </p>
         ) : (
           <p className="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
             Eski hasta kaydına sorumlu doktor atanmadığı için dental güncelleme yapılamaz.
           </p>
         )}
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            [18, 17, 16, 15, 14, 13, 12, 11],
-            [21, 22, 23, 24, 25, 26, 27, 28],
-            [48, 47, 46, 45, 44, 43, 42, 41],
-            [31, 32, 33, 34, 35, 36, 37, 38],
-          ].map((row) => (
-            <div className="grid grid-cols-4 gap-2 rounded-md bg-[var(--canvas)] p-3" key={row[0]}>
-              {row.map((toothNumber) => {
-                const tooth = patient.teeth.find((entry) => entry.toothNumber === toothNumber);
-                return (
-                  <details className="group min-w-0" key={toothNumber}>
-                    <summary className={`flex min-h-11 cursor-pointer list-none items-center justify-center rounded-md border text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] [&::-webkit-details-marker]:hidden ${tooth ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-strong)]" : "border-[var(--line)] bg-white text-[var(--muted)]"}`}>
-                      {toothNumber}
-                    </summary>
-                    <div className="col-span-4 mt-2 rounded-md border border-[var(--line)] bg-white p-2">
-                      <p className="text-xs font-semibold text-[var(--ink)]">{toothNumber} numaralı diş</p>
-                      {tooth?.planItems.length ? (
-                        <ul className="mt-1 text-xs text-[var(--muted)]">
-                          {tooth.planItems.map((item) => (
-                            <li key={item.id}>{item.treatmentName}</li>
-                          ))}
-                        </ul>
-                      ) : null}
-                      {patient.doctorId ? (
-                        <PatientToothForm
-                          notes={tooth?.notes ?? ""}
-                          patientId={patient.id}
-                          status={tooth?.status ?? ToothStatus.HEALTHY}
-                          toothNumber={toothNumber}
-                        />
-                      ) : null}
-                    </div>
-                  </details>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+        <PatientToothChart
+          canEdit={Boolean(patient.doctorId)}
+          patientId={patient.id}
+          teeth={patient.teeth}
+        />
         <div className="mt-5">
           <h3 className="text-sm font-semibold text-[var(--ink)]">Diş ve Tedavi Kayıtları</h3>
           {patient.teeth.length === 0 ? (

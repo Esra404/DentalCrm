@@ -7,6 +7,10 @@ import { prisma } from "@/lib/prisma";
 import {
   getActiveDoctorId,
 } from "@/lib/auth/doctor-access";
+import {
+  insensitiveSearchVariants,
+  patientSearchWhere,
+} from "@/lib/search/patient-search";
 
 function getValue(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -58,9 +62,10 @@ export default async function DocumentsPage({
   const queryWhere = query
     ? {
         OR: [
-          { fileName: { contains: query, mode: "insensitive" as const } },
-          { patient: { is: { firstName: { contains: query, mode: "insensitive" as const } } } },
-          { patient: { is: { lastName: { contains: query, mode: "insensitive" as const } } } },
+          ...insensitiveSearchVariants(query).map((term) => ({
+            fileName: { contains: term, mode: "insensitive" as const },
+          })),
+          { patient: { is: patientSearchWhere(query) } },
         ],
       }
     : {};
@@ -83,7 +88,7 @@ export default async function DocumentsPage({
   const canDelete = user.role === Role.ADMIN || user.role === Role.STAFF;
 
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
       <header className="flex flex-col gap-4 border-b border-[var(--line)] pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">İşlemler</p>

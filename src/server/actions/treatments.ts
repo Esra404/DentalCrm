@@ -159,3 +159,45 @@ export async function setTreatmentActiveAction(formData: FormData): Promise<void
   revalidatePath(`/treatments/${treatmentId}`);
   redirect(`/treatments/${treatmentId}`);
 }
+
+export async function deleteTreatmentAction(formData: FormData): Promise<void> {
+  const user = await requireRoles(...treatmentRoles);
+  const treatmentId = readTreatmentId(formData);
+  if (!treatmentId) redirect("/treatments?error=invalid");
+
+  let deleted = false;
+  try {
+    deleted = await prisma.$transaction(async (tx) => {
+      const treatment = await tx.treatment.findUnique({
+        where: { id: treatmentId },
+        select: { id: true, name: true },
+      });
+      if (!treatment) return false;
+
+      const result = await tx.treatment.deleteMany({
+        where: {
+          id: treatmentId,
+          planItems: { none: {} },
+          appointments: { none: {} },
+        },
+      });
+      if (result.count === 0) return false;
+
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "TREATMENT_DELETED",
+        entity: "Treatment",
+        entityId: treatment.id,
+        metadata: { name: treatment.name },
+      });
+      return true;
+    });
+  } catch (error) {
+    console.error("Tedavi silinemedi.", error);
+    redirect("/treatments?error=delete");
+  }
+
+  if (!deleted) redirect("/treatments?error=used");
+  revalidatePath("/treatments");
+  redirect("/treatments?deleted=1");
+}

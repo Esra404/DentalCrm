@@ -6,7 +6,6 @@ import { AppointmentForm, type AppointmentOption } from "@/components/appointmen
 import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/auth/authorization";
 import {
-  doctorPatientWhere,
   getActiveDoctorId,
 } from "@/lib/auth/doctor-access";
 import {
@@ -53,17 +52,7 @@ export default async function EditAppointmentPage({
   });
   if (!appointment) notFound();
 
-  const [activePatients, activeDoctors, activeTreatments] = await Promise.all([
-    prisma.patient.findMany({
-      where: {
-        isActive: true,
-        ...(user.role === Role.DOCTOR
-          ? doctorPatientWhere(assignedDoctorId)
-          : {}),
-      },
-      select: { id: true, firstName: true, lastName: true, doctorId: true },
-      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-    }),
+  const [activeDoctors, activeTreatments] = await Promise.all([
     prisma.doctor.findMany({
       where: {
         isActive: true,
@@ -86,21 +75,12 @@ export default async function EditAppointmentPage({
 
   const start = appointmentDateTimeValues(appointment.startsAt);
   const end = appointmentDateTimeValues(appointment.endsAt);
-  const patientOptions = addExistingOption(
-    activePatients.map((patient) => ({
-      id: patient.id,
-      label: `${patient.firstName} ${patient.lastName}`,
-      isActive: true,
-      doctorId: patient.doctorId,
-    })),
-    appointment.patient.isActive
-      ? null
-      : {
-          id: appointment.patient.id,
-          label: `${appointment.patient.firstName} ${appointment.patient.lastName}`,
-          doctorId: appointment.patient.doctorId,
-        },
-  );
+  const patientOptions: AppointmentOption[] = [{
+    id: appointment.patient.id,
+    label: `${appointment.patient.firstName} ${appointment.patient.lastName}`,
+    isActive: appointment.patient.isActive,
+    doctorId: appointment.patient.doctorId,
+  }];
   const doctorOptions = addExistingOption(
     activeDoctors.map((doctor) => ({
       id: doctor.id,
@@ -153,6 +133,7 @@ export default async function EditAppointmentPage({
             status: appointment.status,
             note: appointment.note ?? "",
           }}
+          key={appointment.id}
           mode="edit"
           patients={patientOptions}
           treatments={treatmentOptions}

@@ -1,4 +1,5 @@
 import { PATIENT_ID_PATTERN } from "@/lib/validations/patient";
+import { isDoctorSpecialty } from "@/lib/constants/doctor-specialties";
 
 export const DOCTOR_ID_PATTERN = PATIENT_ID_PATTERN;
 
@@ -58,7 +59,11 @@ export function validateDoctorInput(input: DoctorFormInput):
   else if (firstName.length > 100) errors.firstName = "Ad en fazla 100 karakter olabilir.";
   if (!lastName) errors.lastName = "Soyad alanı zorunludur.";
   else if (lastName.length > 100) errors.lastName = "Soyad en fazla 100 karakter olabilir.";
-  if (specialty.length > 120) errors.specialty = "Uzmanlık en fazla 120 karakter olabilir.";
+  if (specialty.length > 120) {
+    errors.specialty = "Uzmanlık en fazla 120 karakter olabilir.";
+  } else if (specialty && !isDoctorSpecialty(specialty)) {
+    errors.specialty = "Listeden geçerli bir uzmanlık alanı seçin.";
+  }
   if (
     phone &&
     (phone.length > 32 ||

@@ -9,6 +9,7 @@ import {
   parseAppointmentLocalDateTime,
 } from "@/lib/validations/appointment";
 import { requireRoles } from "@/lib/auth/authorization";
+import { patientSearchWhere } from "@/lib/search/patient-search";
 import { getActiveDoctorId } from "@/lib/auth/doctor-access";
 
 const PAGE_SIZE = 25;
@@ -71,39 +72,18 @@ export default async function AppointmentsPage({
       : APPOINTMENT_ID_PATTERN.test(doctorId)
         ? doctorId
         : undefined;
-  const terms = query.split(/\s+/).filter(Boolean).slice(0, 5);
   const where: Prisma.AppointmentWhereInput = {
-    AND:
-      user.role === Role.DOCTOR
+    AND: [
+      ...(user.role === Role.DOCTOR
         ? [{ patient: { is: { doctorId: validDoctorId } } }]
-        : [],
+        : []),
+      ...(query ? [{ patient: { is: patientSearchWhere(query) } }] : []),
+    ],
     ...(startOfDay && startOfNextDay
       ? { startsAt: { gte: startOfDay, lt: startOfNextDay } }
       : {}),
     ...(validDoctorId ? { doctorId: validDoctorId } : {}),
     ...(validStatus ? { status: validStatus } : {}),
-    ...(query
-      ? {
-          patient: {
-            is: {
-              OR: [
-                { firstName: { contains: query, mode: "insensitive" } },
-                { lastName: { contains: query, mode: "insensitive" } },
-                { phone: { contains: query } },
-                { email: { contains: query, mode: "insensitive" } },
-                {
-                  AND: terms.map((term) => ({
-                    OR: [
-                      { firstName: { contains: term, mode: "insensitive" as const } },
-                      { lastName: { contains: term, mode: "insensitive" as const } },
-                    ],
-                  })),
-                },
-              ],
-            },
-          },
-        }
-      : {}),
   };
 
   const doctors =
@@ -157,7 +137,7 @@ export default async function AppointmentsPage({
   if (nextCursor) nextParams.set("cursor", nextCursor);
 
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
       <header className="flex flex-col gap-4 border-b border-[var(--line)] pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">İşlemler</p>
@@ -170,23 +150,44 @@ export default async function AppointmentsPage({
         </Link>
       </header>
       {getValue(params.created) === "1" ? <p className="rounded-md border border-[#c7ded6] bg-[#e9f4ef] px-4 py-3 text-sm text-[#245b50]">Randevu kaydı oluşturuldu.</p> : null}
-      <form action="/appointments" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" method="get" role="search">
-        <label className="relative block min-w-0 sm:col-span-2 lg:col-span-1">
-          <span className="sr-only">Hasta ara</span>
-          <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={17} />
-          <input className="min-h-11 w-full rounded-md border border-[var(--line)] bg-white pl-10 pr-3 text-sm text-[var(--ink)] outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15" defaultValue={query} maxLength={120} name="q" placeholder="Hasta ara..." type="search" />
+      <form
+        action="/appointments"
+        className={`grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 ${
+          user.role === Role.DOCTOR
+            ? "xl:grid-cols-[minmax(16rem,2fr)_minmax(9rem,1fr)_minmax(10rem,1.15fr)_auto]"
+            : "xl:grid-cols-[minmax(16rem,2fr)_minmax(9rem,1fr)_minmax(10rem,1.15fr)_minmax(10rem,1.15fr)_auto]"
+        }`}
+        method="get"
+        role="search"
+      >
+        <label className="relative block min-w-0">
+          <span className="mb-1 block text-xs font-medium text-[var(--muted)]">Hasta ara</span>
+          <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-[2.45rem] -translate-y-1/2 text-[var(--muted)]" size={17} />
+          <input
+            className="min-h-11 w-full min-w-0 rounded-md border border-[var(--line)] bg-white pl-10 pr-3 text-sm text-[var(--ink)] outline-none placeholder:text-[#83928d] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15"
+            defaultValue={query}
+            maxLength={120}
+            name="q"
+            placeholder="Ad soyad, telefon veya e-posta"
+            type="search"
+          />
         </label>
-        <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">Tarih<input className="min-h-11 rounded-md border border-[var(--line)] bg-white px-3 text-sm text-[var(--ink)]" defaultValue={date} name="date" type="date" /></label>
-        {user.role !== Role.DOCTOR ? <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">Doktor<select className="min-h-11 rounded-md border border-[var(--line)] bg-white px-3 text-sm text-[var(--ink)]" defaultValue={validDoctorId ?? ""} name="doctorId"><option value="">Tüm doktorlar</option>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.firstName} {doctor.lastName}</option>)}</select></label> : null}
-        <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">Durum<select className="min-h-11 rounded-md border border-[var(--line)] bg-white px-3 text-sm text-[var(--ink)]" defaultValue={validStatus ?? ""} name="status"><option value="">Tüm durumlar</option>{Object.values(AppointmentStatus).map((status) => <option key={status} value={status}>{APPOINTMENT_STATUS_LABELS[status]}</option>)}</select></label>
-        <button className="inline-flex min-h-11 items-center justify-center self-end rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium text-[var(--ink)] outline-none hover:bg-[var(--canvas)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]" type="submit">Filtrele</button>
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-[var(--muted)]">Tarih<input className="min-h-11 w-full min-w-0 rounded-md border border-[var(--line)] bg-white px-3 text-sm text-[var(--ink)]" defaultValue={date} name="date" type="date" /></label>
+        {user.role !== Role.DOCTOR ? <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-[var(--muted)]">Doktor<select className="min-h-11 w-full min-w-0 rounded-md border border-[var(--line)] bg-white px-3 text-sm text-[var(--ink)]" defaultValue={validDoctorId ?? ""} name="doctorId"><option value="">Tüm doktorlar</option>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.firstName} {doctor.lastName}</option>)}</select></label> : null}
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-[var(--muted)]">Durum<select className="min-h-11 w-full min-w-0 rounded-md border border-[var(--line)] bg-white px-3 text-sm text-[var(--ink)]" defaultValue={validStatus ?? ""} name="status"><option value="">Tüm durumlar</option>{Object.values(AppointmentStatus).map((status) => <option key={status} value={status}>{APPOINTMENT_STATUS_LABELS[status]}</option>)}</select></label>
+        <button className="inline-flex min-h-11 w-full items-center justify-center gap-2 self-end rounded-md bg-[var(--accent-strong)] px-5 text-sm font-semibold text-white outline-none hover:bg-[#19483f] focus-visible:ring-2 focus-visible:ring-[var(--accent)] sm:w-auto" type="submit">
+          <Search aria-hidden="true" size={16} />
+          Ara
+        </button>
       </form>
       {loadError ? (
         <p className="rounded-md border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800" role="alert">Randevular yüklenirken bir hata oluştu.</p>
       ) : appointments.length === 0 ? (
         <section className="flex min-h-64 flex-col items-center justify-center rounded-md border border-dashed border-[#c7d7d2] bg-white/70 px-6 py-10 text-center">
-          <h2 className="text-base font-semibold text-[var(--ink)]">{query || date || validDoctorId || validStatus ? "Filtrelerle eşleşen randevu bulunamadı." : "Henüz kayıtlı randevu bulunmuyor."}</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">Randevu oluşturarak başlayabilirsiniz.</p>
+          <h2 className="text-base font-semibold text-[var(--ink)]">{query || date || validDoctorId || validStatus ? "Aramanızla eşleşen randevu bulunamadı." : "Henüz kayıtlı randevu bulunmuyor."}</h2>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            {query ? "Hasta adı, soyadı, telefon veya e-posta bilgisini kontrol edip yeniden arayın." : "Randevu oluşturarak başlayabilirsiniz."}
+          </p>
           <Link className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-md bg-[var(--accent-strong)] px-4 text-sm font-semibold text-white outline-none hover:bg-[#19483f] focus-visible:ring-2 focus-visible:ring-[var(--accent)]" href="/appointments/new"><Plus aria-hidden="true" size={16} />Yeni Randevu</Link>
         </section>
       ) : (

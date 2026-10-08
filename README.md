@@ -34,9 +34,19 @@ interaktif terminalden alır, şifreyi ekranda göstermez ve yalnızca hash'ini 
 npm run db:seed
 ```
 
-Katalog tedavileri başlangıçta pasiftir ve fiyatı `0` olarak eklenir; kliniğin
-gerçek fiyatlarını ayarlayıp tedavileri ayrıca etkinleştirin. Bu komut da yalnızca
-yerel `dental_crm` veritabanında çalışır. Geliştirme sunucusunu `npm run dev` ile
+Katalog 19 tedaviyi aktif ve `0 TRY` fiyatla ekler; her klinik kendi fiyatlarını
+ayarlamalıdır. Seed tekrar çalıştığında aynı isimleri çoğaltmaz ve varsayılan
+kayıtları yeniden etkinleştirir; mevcut fiyatları korur. Kategoriler, ayrı şema alanı bulunmadığı için tedavi açıklamasının başında tutulur.
+Varsayılan olarak bu komut yalnızca yerel `dental_crm` veritabanında çalışır.
+Kullanıcı onayıyla bilinen Neon `neondb` hedefine uygulamak için:
+
+```powershell
+$env:ALLOW_NEON_TREATMENT_SEED = "true"
+npm run db:seed
+Remove-Item Env:ALLOW_NEON_TREATMENT_SEED
+```
+
+Uzak seed üretim ortamında, bu değişken ayarlansa dahi çalışmaz. Geliştirme sunucusunu `npm run dev` ile
 başlatın ve `/login` sayfasından yönetici hesabınızla giriş yapın. Başarılı giriş
 `/dashboard` adresine yönlendirir. İzin kontrolleri sunucu tarafında `requireRole`
 / `requireRoles` yardımcılarıyla yapılmalıdır.
