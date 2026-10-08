@@ -2,12 +2,27 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, CalendarDays, ClipboardList, CreditCard, FileText, Pencil, Smile } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { Role, ToothStatus } from "@/generated/prisma/enums";
+import { requireRoles } from "@/lib/auth/authorization";
+import { canDoctorAccessPatient } from "@/lib/auth/doctor-access";
 import { setPatientActiveAction } from "@/server/actions/patients";
+import { PatientToothForm } from "@/components/patients/patient-tooth-form";
 
 function formatDate(value: Date | null): string {
   if (!value) return "Belirtilmedi";
   return new Intl.DateTimeFormat("tr-TR", { dateStyle: "long" }).format(value);
 }
+
+const TOOTH_STATUS_LABELS: Record<ToothStatus, string> = {
+  HEALTHY: "Sağlıklı",
+  CARIES: "Çürük",
+  FILLED: "Dolgulu",
+  ROOT_CANAL: "Kanal tedavili",
+  CROWN: "Kaplama",
+  MISSING: "Eksik",
+  IMPLANT: "İmplant",
+  EXTRACTION_RECOMMENDED: "Çekim önerildi",
+};
 
 function HistorySection({
   title,
@@ -62,10 +77,18 @@ export default async function PatientDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ error?: string }>;
 }) {
+  const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
   const { id } = await params;
   const query = await searchParams;
 
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    notFound();
+  }
+
+  if (
+    user.role === Role.DOCTOR &&
+    !(await canDoctorAccessPatient(user.id, id))
+  ) {
     notFound();
   }
 
@@ -82,6 +105,26 @@ export default async function PatientDetailPage({
       notes: true,
       isActive: true,
       createdAt: true,
+      doctorId: true,
+      doctor: { select: { firstName: true, lastName: true } },
+      teeth: {
+        orderBy: { toothNumber: "asc" },
+        select: {
+          toothNumber: true,
+          status: true,
+          notes: true,
+          planItems: {
+            select: {
+              id: true,
+              treatmentName: true,
+              treatmentPlan: {
+                select: { id: true, startsAt: true, status: true },
+              },
+            },
+            orderBy: { createdAt: "desc" },
+          },
+        },
+      },
       _count: {
         select: {
           appointments: true,
@@ -94,12 +137,50 @@ export default async function PatientDetailPage({
 
   if (!patient) notFound();
 
-  const [treatmentCount, paymentCount] = await Promise.all([
+  const [treatmentCount, paymentCount, appointments, treatmentPlans, payments] = await Promise.all([
     prisma.treatmentPlanItem.count({
       where: { treatmentPlan: { patientId: patient.id } },
     }),
     prisma.payment.count({
       where: { treatmentPlan: { patientId: patient.id } },
+    }),
+    prisma.appointment.findMany({
+      where: { patientId: patient.id },
+      orderBy: [{ startsAt: "desc" }, { id: "desc" }],
+      take: 20,
+      select: {
+        id: true,
+        startsAt: true,
+        status: true,
+        doctor: { select: { firstName: true, lastName: true } },
+        treatment: { select: { name: true } },
+      },
+    }),
+    prisma.treatmentPlan.findMany({
+      where: { patientId: patient.id },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: 20,
+      select: {
+        id: true,
+        status: true,
+        startsAt: true,
+        endsAt: true,
+        createdAt: true,
+        createdByDoctor: { select: { firstName: true, lastName: true } },
+        items: { select: { treatmentName: true, patientTooth: { select: { toothNumber: true } } } },
+      },
+    }),
+    prisma.payment.findMany({
+      where: { treatmentPlan: { patientId: patient.id } },
+      orderBy: [{ paidAt: "desc" }, { id: "desc" }],
+      take: 20,
+      select: {
+        id: true,
+        amount: true,
+        method: true,
+        paidAt: true,
+        treatmentPlan: { select: { id: true, currency: true } },
+      },
     }),
   ]);
 
@@ -165,6 +246,16 @@ export default async function PatientDetailPage({
         </div>
         <dl className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
           <Detail label="Ad Soyad" value={fullName} />
+          <div>
+            <dt className="text-xs font-medium text-[var(--muted)]">Sorumlu Doktor</dt>
+            <dd className="mt-1 text-sm font-medium text-[var(--ink)]">
+              {patient.doctor ? (
+                <Link className="text-[var(--accent-strong)] underline-offset-4 hover:underline" href={`/doctors/${patient.doctorId}`}>
+                  Dr. {patient.doctor.firstName} {patient.doctor.lastName}
+                </Link>
+              ) : "Atanmamış"}
+            </dd>
+          </div>
           <Detail label="Telefon" value={patient.phone || "Belirtilmedi"} />
           <Detail label="E-posta" value={patient.email || "Belirtilmedi"} />
           <Detail label="Doğum Tarihi" value={formatDate(patient.dateOfBirth)} />
@@ -174,6 +265,144 @@ export default async function PatientDetailPage({
             <Detail label="Notlar" value={patient.notes || "Not bulunmuyor."} />
           </div>
         </dl>
+      </section>
+
+      <section aria-labelledby="patient-teeth-title" className="rounded-md border border-[var(--line)] bg-white p-5 sm:p-7">
+        <div className="border-b border-[var(--line)] pb-4">
+          <h2 className="text-base font-semibold text-[var(--ink)]" id="patient-teeth-title">Diş Durumu (FDI)</h2>
+          <p className="mt-1 text-sm text-[var(--muted)]">Dişe tıklayarak temel durumu ve notu kaydedin.</p>
+        </div>
+        {patient.doctor ? (
+          <p className="mt-4 text-sm text-[var(--muted)]">
+            Sorumlu doktor: Dr. {patient.doctor.firstName} {patient.doctor.lastName}
+          </p>
+        ) : (
+          <p className="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+            Eski hasta kaydına sorumlu doktor atanmadığı için dental güncelleme yapılamaz.
+          </p>
+        )}
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            [18, 17, 16, 15, 14, 13, 12, 11],
+            [21, 22, 23, 24, 25, 26, 27, 28],
+            [48, 47, 46, 45, 44, 43, 42, 41],
+            [31, 32, 33, 34, 35, 36, 37, 38],
+          ].map((row) => (
+            <div className="grid grid-cols-4 gap-2 rounded-md bg-[var(--canvas)] p-3" key={row[0]}>
+              {row.map((toothNumber) => {
+                const tooth = patient.teeth.find((entry) => entry.toothNumber === toothNumber);
+                return (
+                  <details className="group min-w-0" key={toothNumber}>
+                    <summary className={`flex min-h-11 cursor-pointer list-none items-center justify-center rounded-md border text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] [&::-webkit-details-marker]:hidden ${tooth ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-strong)]" : "border-[var(--line)] bg-white text-[var(--muted)]"}`}>
+                      {toothNumber}
+                    </summary>
+                    <div className="col-span-4 mt-2 rounded-md border border-[var(--line)] bg-white p-2">
+                      <p className="text-xs font-semibold text-[var(--ink)]">{toothNumber} numaralı diş</p>
+                      {tooth?.planItems.length ? (
+                        <ul className="mt-1 text-xs text-[var(--muted)]">
+                          {tooth.planItems.map((item) => (
+                            <li key={item.id}>{item.treatmentName}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {patient.doctorId ? (
+                        <PatientToothForm
+                          notes={tooth?.notes ?? ""}
+                          patientId={patient.id}
+                          status={tooth?.status ?? ToothStatus.HEALTHY}
+                          toothNumber={toothNumber}
+                        />
+                      ) : null}
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <div className="mt-5">
+          <h3 className="text-sm font-semibold text-[var(--ink)]">Diş ve Tedavi Kayıtları</h3>
+          {patient.teeth.length === 0 ? (
+            <p className="mt-2 text-sm text-[var(--muted)]">Henüz diş kaydı bulunmuyor.</p>
+          ) : (
+            <ul className="mt-2 divide-y divide-[var(--line)]">
+              {patient.teeth.map((tooth) => (
+                <li className="flex flex-col gap-1 py-3 text-sm sm:flex-row sm:items-start sm:justify-between" key={tooth.toothNumber}>
+                  <span className="font-medium text-[var(--ink)]">
+                    FDI {tooth.toothNumber} · {TOOTH_STATUS_LABELS[tooth.status]}
+                    {tooth.notes ? ` · ${tooth.notes}` : ""}
+                  </span>
+                  <span className="text-[var(--muted)]">
+                    {tooth.planItems.map((item) => item.treatmentName).join(", ") || "Tedavi planı yok"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      <section aria-labelledby="patient-treatment-history-title" className="rounded-md border border-[var(--line)] bg-white p-5 sm:p-7">
+        <h2 className="text-base font-semibold text-[var(--ink)]" id="patient-treatment-history-title">Tedavi Geçmişi</h2>
+        {treatmentPlans.length === 0 ? (
+          <p className="mt-3 text-sm text-[var(--muted)]">Henüz tedavi planı bulunmuyor.</p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[620px] text-left text-sm">
+              <thead className="text-xs text-[var(--muted)]"><tr><th className="py-2">Tarih</th><th>Plan</th><th>Tedavi</th><th>Diş</th><th>Doktor</th></tr></thead>
+              <tbody className="divide-y divide-[var(--line)]">
+                {treatmentPlans.flatMap((plan) => plan.items.map((item, index) => (
+                  <tr key={`${plan.id}-${index}`}>
+                    <td className="py-3">{formatDate(plan.startsAt ?? plan.createdAt)}</td>
+                    <td>{plan.status}</td>
+                    <td>{item.treatmentName}</td>
+                    <td>{item.patientTooth ? `FDI ${item.patientTooth.toothNumber}` : "—"}</td>
+                    <td>{plan.createdByDoctor ? `Dr. ${plan.createdByDoctor.firstName} ${plan.createdByDoctor.lastName}` : "—"}</td>
+                  </tr>
+                )))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section aria-labelledby="patient-appointment-history-title" className="rounded-md border border-[var(--line)] bg-white p-5 sm:p-7">
+        <h2 className="text-base font-semibold text-[var(--ink)]" id="patient-appointment-history-title">Randevu Geçmişi</h2>
+        {appointments.length === 0 ? (
+          <p className="mt-3 text-sm text-[var(--muted)]">Henüz randevu bulunmuyor.</p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[620px] text-left text-sm">
+              <thead className="text-xs text-[var(--muted)]"><tr><th className="py-2">Tarih / Saat</th><th>Doktor</th><th>Tedavi</th><th>Durum</th></tr></thead>
+              <tbody className="divide-y divide-[var(--line)]">
+                {appointments.map((appointment) => (
+                  <tr key={appointment.id}>
+                    <td className="py-3">{new Intl.DateTimeFormat("tr-TR", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Istanbul" }).format(appointment.startsAt)}</td>
+                    <td>Dr. {appointment.doctor.firstName} {appointment.doctor.lastName}</td>
+                    <td>{appointment.treatment?.name ?? "—"}</td>
+                    <td>{appointment.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section aria-labelledby="patient-payments-title" className="rounded-md border border-[var(--line)] bg-white p-5 sm:p-7">
+        <h2 className="text-base font-semibold text-[var(--ink)]" id="patient-payments-title">Ödemeler</h2>
+        {payments.length === 0 ? (
+          <p className="mt-3 text-sm text-[var(--muted)]">Henüz ödeme bulunmuyor.</p>
+        ) : (
+          <ul className="mt-3 divide-y divide-[var(--line)]">
+            {payments.map((payment) => (
+              <li className="flex justify-between gap-3 py-3 text-sm" key={payment.id}>
+                <span>{formatDate(payment.paidAt)} · {payment.method}</span>
+                <span className="font-medium">{new Intl.NumberFormat("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(payment.amount.toNumber())} {payment.treatmentPlan.currency.trim()}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section aria-label="Hasta geçmişi" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

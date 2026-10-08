@@ -4,7 +4,7 @@ import { AuthError } from "next-auth";
 import { signIn, signOut } from "@/auth";
 import { parseLoginCredentials, type LoginActionState } from "@/lib/validations/auth";
 
-const INVALID_LOGIN_MESSAGE = "Invalid email or password.";
+const INVALID_LOGIN_MESSAGE = "E-posta veya şifre hatalı.";
 
 export async function loginAction(
   _previousState: LoginActionState,
@@ -20,7 +20,7 @@ export async function loginAction(
   try {
     await signIn("credentials", {
       ...credentials,
-      redirectTo: "/auth-check",
+      redirectTo: "/dashboard",
     });
   } catch (error) {
     if (error instanceof AuthError) {

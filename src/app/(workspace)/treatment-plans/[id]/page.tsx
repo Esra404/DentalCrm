@@ -8,6 +8,7 @@ import {
   TREATMENT_PLAN_ID_PATTERN,
 } from "@/lib/validations/treatment-plan";
 import { requireRoles } from "@/lib/auth/authorization";
+import { getActiveDoctorId } from "@/lib/auth/doctor-access";
 
 const STATUS_LABELS: Record<TreatmentPlanStatus, string> = {
   DRAFT: "Taslak",
@@ -30,12 +31,23 @@ export default async function TreatmentPlanDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
+  const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
   const { id } = await params;
   if (!TREATMENT_PLAN_ID_PATTERN.test(id)) notFound();
 
-  const plan = await prisma.treatmentPlan.findUnique({
-    where: { id },
+  const doctorId =
+    user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
+  const plan = await prisma.treatmentPlan.findFirst({
+    where: {
+      id,
+      ...(user.role === Role.DOCTOR
+        ? {
+            patient: {
+              doctorId: doctorId ?? "00000000-0000-0000-0000-000000000000",
+            },
+          }
+        : {}),
+    },
     include: {
       patient: {
         select: { firstName: true, lastName: true, phone: true, email: true },
@@ -46,6 +58,7 @@ export default async function TreatmentPlanDetailPage({
           treatmentName: true,
           quantity: true,
           unitPrice: true,
+          patientTooth: { select: { toothNumber: true } },
         },
         orderBy: { createdAt: "asc" },
       },
@@ -105,12 +118,12 @@ export default async function TreatmentPlanDetailPage({
           <p className="px-5 py-6 text-sm text-[var(--muted)]">Bu planda henüz tedavi kalemi bulunmuyor.</p>
         ) : (
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[600px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[680px] border-collapse text-left text-sm">
               <caption className="sr-only">Tedavi planı kalemleri</caption>
-              <thead className="bg-[#f6f8f7] text-xs font-semibold text-[var(--muted)]"><tr><th className="px-5 py-3" scope="col">Tedavi</th><th className="px-5 py-3 text-right" scope="col">Adet</th><th className="px-5 py-3 text-right" scope="col">Birim Fiyat</th><th className="px-5 py-3 text-right" scope="col">Satır Toplamı</th></tr></thead>
+              <thead className="bg-[#f6f8f7] text-xs font-semibold text-[var(--muted)]"><tr><th className="px-5 py-3" scope="col">Tedavi</th><th className="px-5 py-3" scope="col">Diş</th><th className="px-5 py-3 text-right" scope="col">Adet</th><th className="px-5 py-3 text-right" scope="col">Birim Fiyat</th><th className="px-5 py-3 text-right" scope="col">Satır Toplamı</th></tr></thead>
               <tbody className="divide-y divide-[var(--line)]">{plan.items.map((item) => {
                 const lineTotal = item.unitPrice.mul(item.quantity);
-                return <tr key={item.id}><th className="px-5 py-4 font-medium text-[var(--ink)]" scope="row">{item.treatmentName}</th><td className="px-5 py-4 text-right text-[var(--muted)]">{item.quantity}</td><td className="px-5 py-4 text-right text-[var(--muted)]">{formatMoney(item.unitPrice, plan.currency)}</td><td className="px-5 py-4 text-right font-medium text-[var(--ink)]">{formatMoney(lineTotal, plan.currency)}</td></tr>;
+                return <tr key={item.id}><th className="px-5 py-4 font-medium text-[var(--ink)]" scope="row">{item.treatmentName}</th><td className="px-5 py-4 text-[var(--muted)]">{item.patientTooth ? `FDI ${item.patientTooth.toothNumber}` : "Belirtilmedi"}</td><td className="px-5 py-4 text-right text-[var(--muted)]">{item.quantity}</td><td className="px-5 py-4 text-right text-[var(--muted)]">{formatMoney(item.unitPrice, plan.currency)}</td><td className="px-5 py-4 text-right font-medium text-[var(--ink)]">{formatMoney(lineTotal, plan.currency)}</td></tr>;
               })}</tbody>
             </table>
           </div>

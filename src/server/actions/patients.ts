@@ -6,6 +6,8 @@ import { Role } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { writeAuditLog } from "@/lib/audit/write-audit-log";
 import { requireRoles } from "@/lib/auth/authorization";
+import { canDoctorAccessPatient } from "@/lib/auth/doctor-access";
+import { getActiveDoctorId } from "@/lib/auth/doctor-access";
 import {
   patientInputFromFormData,
   validatePatientInput,
@@ -14,6 +16,8 @@ import {
 
 const patientRoles = [Role.ADMIN, Role.STAFF, Role.DOCTOR] as const;
 const INVALID_ID_MESSAGE = "Hasta bulunamadı.";
+
+class PatientRuleError extends Error {}
 
 function readId(formData: FormData): string | null {
   const value = formData.get("patientId");
@@ -27,7 +31,16 @@ export async function createPatientAction(
 ): Promise<PatientActionState> {
   const user = await requireRoles(...patientRoles);
 
-  const result = validatePatientInput(patientInputFromFormData(formData));
+  const ownDoctorId =
+    user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
+  if (user.role === Role.DOCTOR && !ownDoctorId) {
+    return { message: "Aktif doktor profiliniz bulunamadı." };
+  }
+  const input = patientInputFromFormData(formData);
+  const result = validatePatientInput({
+    ...input,
+    doctorId: ownDoctorId ?? input.doctorId,
+  });
   if (!result.success) {
     return {
       message: "Lütfen işaretli alanları kontrol edin.",
@@ -37,6 +50,11 @@ export async function createPatientAction(
 
   try {
     await prisma.$transaction(async (tx) => {
+      const doctor = await tx.doctor.findFirst({
+        where: { id: result.data.doctorId, isActive: true },
+        select: { id: true, firstName: true, lastName: true },
+      });
+      if (!doctor) throw new PatientRuleError("Aktif sorumlu doktor seçin.");
       const patient = await tx.patient.create({
         data: result.data,
         select: { id: true },
@@ -48,7 +66,9 @@ export async function createPatientAction(
         entityId: patient.id,
       });
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof PatientRuleError) return { message: error.message };
+    console.error("Hasta kaydedilemedi.", error);
     return { message: "Hasta kaydedilirken bir hata oluştu." };
   }
 
@@ -64,8 +84,23 @@ export async function updatePatientAction(
 
   const patientId = readId(formData);
   if (!patientId) return { message: INVALID_ID_MESSAGE };
+  if (
+    user.role === Role.DOCTOR &&
+    !(await canDoctorAccessPatient(user.id, patientId))
+  ) {
+    return { message: INVALID_ID_MESSAGE };
+  }
 
-  const result = validatePatientInput(patientInputFromFormData(formData));
+  const ownDoctorId =
+    user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
+  if (user.role === Role.DOCTOR && !ownDoctorId) {
+    return { message: "Aktif doktor profiliniz bulunamadı." };
+  }
+  const input = patientInputFromFormData(formData);
+  const result = validatePatientInput({
+    ...input,
+    doctorId: ownDoctorId ?? input.doctorId,
+  });
   if (!result.success) {
     return {
       message: "Lütfen işaretli alanları kontrol edin.",
@@ -75,11 +110,46 @@ export async function updatePatientAction(
 
   try {
     await prisma.$transaction(async (tx) => {
+      const doctor = await tx.doctor.findFirst({
+        where: { id: result.data.doctorId, isActive: true },
+        select: { id: true, firstName: true, lastName: true },
+      });
+      if (!doctor) {
+        throw new PatientRuleError("Aktif sorumlu doktor seçin.");
+      }
+      const current = await tx.patient.findUnique({
+        where: { id: patientId },
+        select: {
+          id: true,
+          doctorId: true,
+          doctor: { select: { firstName: true, lastName: true } },
+        },
+      });
+      if (!current) throw new PatientRuleError(INVALID_ID_MESSAGE);
       const patient = await tx.patient.update({
         where: { id: patientId },
         data: result.data,
-        select: { id: true },
+        select: {
+          id: true,
+          doctorId: true,
+        },
       });
+      if (current.doctorId !== patient.doctorId) {
+        await writeAuditLog(tx, {
+          userId: user.id,
+          action: "PATIENT_DOCTOR_ASSIGNED",
+          entity: "Patient",
+          entityId: patient.id,
+          metadata: {
+            previousDoctorId: current.doctorId,
+            doctorId: patient.doctorId,
+            previousDoctorName: current.doctor
+              ? `${current.doctor.firstName} ${current.doctor.lastName}`
+              : null,
+            doctorName: `${doctor.firstName} ${doctor.lastName}`,
+          },
+        });
+      }
       await writeAuditLog(tx, {
         userId: user.id,
         action: "PATIENT_UPDATED",
@@ -87,7 +157,9 @@ export async function updatePatientAction(
         entityId: patient.id,
       });
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof PatientRuleError) return { message: error.message };
+    console.error("Hasta bilgileri kaydedilemedi.", error);
     return { message: "Hasta bilgileri kaydedilirken bir hata oluştu." };
   }
 
@@ -104,6 +176,12 @@ export async function setPatientActiveAction(
   const patientId = readId(formData);
   const activeValue = formData.get("active");
   if (!patientId || (activeValue !== "true" && activeValue !== "false")) {
+    redirect("/patients");
+  }
+  if (
+    user.role === Role.DOCTOR &&
+    !(await canDoctorAccessPatient(user.id, patientId))
+  ) {
     redirect("/patients");
   }
 

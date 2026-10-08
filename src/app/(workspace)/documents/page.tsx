@@ -4,6 +4,9 @@ import { Role } from "@/generated/prisma/enums";
 import { softDeletePatientDocumentAction } from "@/server/actions/patient-documents";
 import { requireRoles } from "@/lib/auth/authorization";
 import { prisma } from "@/lib/prisma";
+import {
+  getActiveDoctorId,
+} from "@/lib/auth/doctor-access";
 
 function getValue(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -44,16 +47,25 @@ export default async function DocumentsPage({
   const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
   const params = await searchParams;
   const query = getValue(params.q).trim().slice(0, 120);
-  const documents = await prisma.patientDocument.findMany({
-    where: query
+  const doctorWhere =
+    user.role === Role.DOCTOR
       ? {
-          OR: [
-            { fileName: { contains: query, mode: "insensitive" } },
-            { patient: { is: { firstName: { contains: query, mode: "insensitive" } } } },
-            { patient: { is: { lastName: { contains: query, mode: "insensitive" } } } },
-          ],
+          patient: {
+            is: { doctorId: await getActiveDoctorId(user.id) ?? "00000000-0000-0000-0000-000000000000" },
+          },
         }
-      : {},
+      : {};
+  const queryWhere = query
+    ? {
+        OR: [
+          { fileName: { contains: query, mode: "insensitive" as const } },
+          { patient: { is: { firstName: { contains: query, mode: "insensitive" as const } } } },
+          { patient: { is: { lastName: { contains: query, mode: "insensitive" as const } } } },
+        ],
+      }
+    : {};
+  const documents = await prisma.patientDocument.findMany({
+    where: { AND: [doctorWhere, queryWhere] },
     orderBy: [{ uploadedAt: "desc" }, { id: "desc" }],
     take: 100,
     select: {

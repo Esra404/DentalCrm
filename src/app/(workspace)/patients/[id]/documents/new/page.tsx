@@ -5,6 +5,7 @@ import { PatientDocumentForm } from "@/components/patients/patient-document-form
 import { Role } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/auth/authorization";
+import { canDoctorAccessPatient } from "@/lib/auth/doctor-access";
 import { PATIENT_DOCUMENT_ID_PATTERN } from "@/lib/validations/patient-document";
 
 export default async function NewPatientDocumentPage({
@@ -12,9 +13,15 @@ export default async function NewPatientDocumentPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
+  const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
   const { id } = await params;
   if (!PATIENT_DOCUMENT_ID_PATTERN.test(id)) notFound();
+  if (
+    user.role === Role.DOCTOR &&
+    !(await canDoctorAccessPatient(user.id, id))
+  ) {
+    notFound();
+  }
 
   const patient = await prisma.patient.findUnique({
     where: { id },

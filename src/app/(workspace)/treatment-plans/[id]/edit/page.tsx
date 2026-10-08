@@ -5,6 +5,7 @@ import { Role } from "@/generated/prisma/enums";
 import { TreatmentPlanForm } from "@/components/treatment-plans/treatment-plan-form";
 import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/auth/authorization";
+import { getActiveDoctorId } from "@/lib/auth/doctor-access";
 import { TREATMENT_PLAN_ID_PATTERN } from "@/lib/validations/treatment-plan";
 
 function formatDate(value: Date | null): string {
@@ -16,17 +17,29 @@ export default async function EditTreatmentPlanPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
+  const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
   const { id } = await params;
   if (!TREATMENT_PLAN_ID_PATTERN.test(id)) notFound();
 
-  const plan = await prisma.treatmentPlan.findUnique({
-    where: { id },
+  const doctorId =
+    user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
+  const plan = await prisma.treatmentPlan.findFirst({
+    where: {
+      id,
+      ...(user.role === Role.DOCTOR
+        ? {
+            patient: {
+              doctorId: doctorId ?? "00000000-0000-0000-0000-000000000000",
+            },
+          }
+        : {}),
+    },
     include: {
       patient: { select: { id: true, firstName: true, lastName: true, isActive: true } },
       items: {
         include: {
           treatment: { select: { id: true, isActive: true } },
+          patientTooth: { select: { toothNumber: true } },
         },
         orderBy: { createdAt: "asc" },
       },
@@ -100,6 +113,7 @@ export default async function EditTreatmentPlanPage({
             itemId: item.id,
             treatmentId: item.treatmentId,
             quantity: item.quantity,
+            toothNumber: item.patientTooth?.toothNumber ?? null,
             treatmentName: item.treatmentName,
             unitPrice: item.unitPrice.toString(),
             currency: plan.currency,

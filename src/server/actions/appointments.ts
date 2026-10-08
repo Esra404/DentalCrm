@@ -5,6 +5,10 @@ import { redirect } from "next/navigation";
 import { AppointmentStatus, Prisma, Role } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/auth/authorization";
+import {
+  canDoctorAccessPatient,
+  getActiveDoctorId,
+} from "@/lib/auth/doctor-access";
 import { getChangedFields } from "@/lib/audit/changed-fields";
 import { writeAuditLog } from "@/lib/audit/write-audit-log";
 import {
@@ -55,6 +59,7 @@ async function saveAppointment(
   data: AppointmentWriteData,
   appointmentId: string | null,
   userId: string,
+  authorizedDoctorId: string | null,
 ): Promise<void> {
   await prisma.$transaction(
     async (tx) => {
@@ -77,13 +82,17 @@ async function saveAppointment(
       if (appointmentId && !current) {
         throw new AppointmentRuleError("Randevu bulunamadı.");
       }
-
       const patient = await tx.patient.findUnique({
         where: { id: data.patientId },
-        select: { id: true, isActive: true },
+        select: { id: true, isActive: true, doctorId: true },
       });
+      if (!patient) throw new AppointmentRuleError("Hasta kaydı bulunamadı.", "patientId");
+      if (!patient.doctorId) {
+        throw new AppointmentRuleError("Randevu için hastaya sorumlu doktor atanmalıdır.", "patientId");
+      }
+      const appointmentData = { ...data, doctorId: patient.doctorId };
       const doctor = await tx.doctor.findUnique({
-        where: { id: data.doctorId },
+        where: { id: appointmentData.doctorId },
         select: { id: true, isActive: true },
       });
       const treatment = await tx.treatment.findUnique({
@@ -91,8 +100,14 @@ async function saveAppointment(
         select: { id: true, isActive: true },
       });
 
-      if (!patient) throw new AppointmentRuleError("Hasta kaydı bulunamadı.", "patientId");
       if (!doctor) throw new AppointmentRuleError("Doktor kaydı bulunamadı.", "doctorId");
+      if (
+        authorizedDoctorId &&
+        (appointmentData.doctorId !== authorizedDoctorId ||
+          current?.doctorId !== undefined && current.doctorId !== authorizedDoctorId)
+      ) {
+        throw new AppointmentRuleError("Yalnızca kendi sorumlu hastalarınızın randevularını düzenleyebilirsiniz.");
+      }
       if (!treatment) throw new AppointmentRuleError("Tedavi kaydı bulunamadı.", "treatmentId");
       if (!patient.isActive && patient.id !== current?.patientId) {
         throw new AppointmentRuleError("Pasif hastayla yeni randevu oluşturulamaz.", "patientId");
@@ -110,7 +125,7 @@ async function saveAppointment(
       ) {
         const overlappingAppointment = await tx.appointment.findFirst({
           where: {
-            doctorId: data.doctorId,
+              doctorId: appointmentData.doctorId,
             status: {
               in: [AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED],
             },
@@ -132,7 +147,7 @@ async function saveAppointment(
           where: { id: appointmentId },
           data: {
             patientId: data.patientId,
-            doctorId: data.doctorId,
+            doctorId: appointmentData.doctorId,
             treatmentId: data.treatmentId,
             startsAt: data.startsAt,
             endsAt: data.endsAt,
@@ -142,7 +157,7 @@ async function saveAppointment(
           select: { id: true },
         });
         if (current) {
-          const changed = getChangedFields(current, data);
+          const changed = getChangedFields(current, appointmentData);
           if (changed.length > 0) {
             await writeAuditLog(tx, {
               userId,
@@ -166,7 +181,7 @@ async function saveAppointment(
         const appointment = await tx.appointment.create({
           data: {
             patientId: data.patientId,
-            doctorId: data.doctorId,
+            doctorId: appointmentData.doctorId,
             treatmentId: data.treatmentId,
             startsAt: data.startsAt,
             endsAt: data.endsAt,
@@ -192,6 +207,11 @@ async function mutateAppointment(
   appointmentId: string | null,
 ): Promise<AppointmentActionState> {
   const user = await requireRoles(...appointmentRoles);
+  const authorizedDoctorId =
+    user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
+  if (user.role === Role.DOCTOR && !authorizedDoctorId) {
+    return { message: "Doktor profiliniz bulunamadı." };
+  }
 
   const result = validateAppointmentInput(appointmentInputFromFormData(formData));
   if (!result.success) {
@@ -200,10 +220,24 @@ async function mutateAppointment(
       fieldErrors: result.errors,
     };
   }
+  if (
+    user.role === Role.DOCTOR &&
+    !(await canDoctorAccessPatient(user.id, result.data.patientId))
+  ) {
+    return {
+      message: "Yalnızca kendi hastalarınız için randevu oluşturabilirsiniz.",
+      fieldErrors: { patientId: "Bu hasta doktor listenizde bulunmuyor." },
+    };
+  }
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      await saveAppointment(result.data, appointmentId, user.id);
+      await saveAppointment(
+        result.data,
+        appointmentId,
+        user.id,
+        authorizedDoctorId,
+      );
       break;
     } catch (error) {
       if (error instanceof AppointmentRuleError) return ruleErrorState(error);

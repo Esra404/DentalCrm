@@ -33,6 +33,7 @@ export type PlanItemFormValue = {
   itemId?: string;
   treatmentId: string;
   quantity: number;
+  toothNumber: number | null;
   treatmentName: string;
   unitPrice: string;
   currency: string;
@@ -85,10 +86,11 @@ export function TreatmentPlanForm({
   const [selectedPatientId, setSelectedPatientId] = useState(patientId);
   const errors = { ...state.fieldErrors, ...clientErrors };
   const itemsJson = JSON.stringify(
-    rows.map(({ itemId, treatmentId, quantity }) => ({
+    rows.map(({ itemId, treatmentId, quantity, toothNumber }) => ({
       ...(itemId ? { itemId } : {}),
       treatmentId,
       quantity,
+      toothNumber,
     })),
   );
 
@@ -117,6 +119,7 @@ export function TreatmentPlanForm({
         key: `new-${nextKey}`,
         treatmentId: "",
         quantity: 1,
+        toothNumber: null,
         treatmentName: "",
         unitPrice: "",
         currency: "",
@@ -206,7 +209,7 @@ export function TreatmentPlanForm({
         </div>
         <div className="mt-4 flex flex-col gap-4">
           {rows.map((row, index) => (
-            <div className="grid gap-3 rounded-md border border-[var(--line)] p-3 md:grid-cols-[minmax(0,2fr)_minmax(6rem,1fr)_minmax(8rem,1fr)_auto]" key={row.key}>
+            <div className="grid gap-3 rounded-md border border-[var(--line)] p-3 md:grid-cols-[minmax(0,2fr)_minmax(7rem,1fr)_minmax(5rem,0.7fr)_minmax(8rem,1fr)_auto]" key={row.key}>
               <label className="flex flex-col gap-2 text-sm font-medium text-[var(--ink)]" htmlFor={`treatment-${row.key}`}>
                 Tedavi
                 <select
@@ -222,6 +225,25 @@ export function TreatmentPlanForm({
                       {treatment.name} · {treatment.price} {treatment.currency}{treatment.isActive ? "" : " (Pasif - mevcut kayıt)"}
                     </option>
                   ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-[var(--ink)]" htmlFor={`tooth-${row.key}`}>
+                Diş (FDI)
+                <select
+                  className={inputClass}
+                  id={`tooth-${row.key}`}
+                  onChange={(event) => updateRow(row.key, {
+                    toothNumber: event.currentTarget.value ? Number(event.currentTarget.value) : null,
+                  })}
+                  value={row.toothNumber ?? ""}
+                >
+                  <option value="">Belirtilmedi</option>
+                  {Array.from({ length: 32 }, (_, index) => {
+                    const quadrant = Math.floor(index / 8) + 1;
+                    const position = (index % 8) + 1;
+                    const number = quadrant * 10 + position;
+                    return <option key={number} value={number}>{number}</option>;
+                  })}
                 </select>
               </label>
               <label className="flex flex-col gap-2 text-sm font-medium text-[var(--ink)]" htmlFor={`quantity-${row.key}`}>
@@ -243,6 +265,9 @@ export function TreatmentPlanForm({
                   {row.unitPrice ? `${row.unitPrice} ${row.currency}` : "Tedavi seçin"}
                 </span>
               </div>
+              <p className="mt-3 text-xs text-[var(--muted)]">
+                Diş numarası seçmek için önce hastanın diş kaydında bu dişin durumunu kaydedin.
+              </p>
               <button
                 aria-label={`${index + 1}. tedavi kalemini çıkar`}
                 className="inline-flex min-h-11 items-center justify-center rounded-md px-3 text-sm font-medium text-red-700 outline-none hover:bg-red-50 focus-visible:ring-2 focus-visible:ring-red-500"

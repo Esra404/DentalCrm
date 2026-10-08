@@ -3,15 +3,26 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { PatientForm } from "@/components/patients/patient-form";
+import { Role } from "@/generated/prisma/enums";
+import { requireRoles } from "@/lib/auth/authorization";
+import { canDoctorAccessPatient } from "@/lib/auth/doctor-access";
 
 export default async function EditPatientPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
   const { id } = await params;
 
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    notFound();
+  }
+
+  if (
+    user.role === Role.DOCTOR &&
+    !(await canDoctorAccessPatient(user.id, id))
+  ) {
     notFound();
   }
 
@@ -26,10 +37,34 @@ export default async function EditPatientPage({
       dateOfBirth: true,
       address: true,
       notes: true,
+      doctorId: true,
+      doctor: { select: { firstName: true, lastName: true, isActive: true } },
     },
   });
 
   if (!patient) notFound();
+  const doctors = await prisma.doctor.findMany({
+    where: { isActive: true },
+    select: { id: true, firstName: true, lastName: true },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+  });
+  const doctorOptions = doctors.map((doctor) => ({
+    id: doctor.id,
+    label: `${doctor.firstName} ${doctor.lastName}`,
+    isActive: true,
+  }));
+  if (
+    patient.doctorId &&
+    patient.doctor &&
+    !patient.doctor.isActive &&
+    !doctorOptions.some((doctor) => doctor.id === patient.doctorId)
+  ) {
+    doctorOptions.push({
+      id: patient.doctorId,
+      label: `${patient.doctor.firstName} ${patient.doctor.lastName}`,
+      isActive: false,
+    });
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -55,14 +90,18 @@ export default async function EditPatientPage({
           initialValues={{
             firstName: patient.firstName,
             lastName: patient.lastName,
+            doctorId: patient.doctorId ?? "",
             phone: patient.phone ?? "",
             email: patient.email ?? "",
             dateOfBirth: patient.dateOfBirth?.toISOString().slice(0, 10) ?? "",
             address: patient.address ?? "",
             notes: patient.notes ?? "",
           }}
+          assignedDoctorLabel={patient.doctor ? `${patient.doctor.firstName} ${patient.doctor.lastName}` : undefined}
+          doctors={doctorOptions}
           mode="edit"
           patientId={patient.id}
+          role={user.role}
         />
       </section>
     </div>

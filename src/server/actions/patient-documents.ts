@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { Role } from "@/generated/prisma/enums";
 import { requireRoles } from "@/lib/auth/authorization";
+import { canDoctorAccessPatient } from "@/lib/auth/doctor-access";
 import {
   removeLocalDocument,
   writeLocalDocument,
@@ -39,6 +40,12 @@ export async function createPatientDocumentAction(
   if (
     typeof patientIdValue !== "string" ||
     !PATIENT_DOCUMENT_ID_PATTERN.test(patientIdValue)
+  ) {
+    return { message: "Hasta bulunamadı." };
+  }
+  if (
+    user.role === Role.DOCTOR &&
+    !(await canDoctorAccessPatient(user.id, patientIdValue))
   ) {
     return { message: "Hasta bulunamadı." };
   }

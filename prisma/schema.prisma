@@ -11,7 +11,6 @@ enum Role {
   ADMIN
   STAFF
   DOCTOR
-  PATIENT
 }
 
 enum AppointmentStatus {
@@ -30,6 +29,17 @@ enum TreatmentPlanStatus {
   CANCELLED
 }
 
+enum ToothStatus {
+  HEALTHY
+  CARIES
+  FILLED
+  ROOT_CANAL
+  CROWN
+  MISSING
+  IMPLANT
+  EXTRACTION_RECOMMENDED
+}
+
 enum PaymentMethod {
   CASH
   CARD
@@ -38,18 +48,18 @@ enum PaymentMethod {
 }
 
 model User {
-  id        String     @id @default(uuid()) @db.Uuid
-  name      String     @db.VarChar(160)
-  email     String     @unique @db.VarChar(320)
-  passwordHash String?  @db.VarChar(255)
-  role      Role       @default(STAFF)
-  isActive  Boolean    @default(true)
-  doctor    Doctor?
-  patient   Patient?
-  auditLogs AuditLog[]
-  documents PatientDocument[]
-  createdAt DateTime   @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime   @updatedAt @db.Timestamptz(3)
+  id           String            @id @default(uuid()) @db.Uuid
+  name         String            @db.VarChar(160)
+  email        String            @unique @db.VarChar(320)
+  passwordHash String?           @db.VarChar(255)
+  role         Role              @default(STAFF)
+  isActive     Boolean           @default(true)
+  doctor       Doctor?
+  patient      Patient?
+  auditLogs    AuditLog[]
+  documents    PatientDocument[]
+  createdAt    DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime          @updatedAt @db.Timestamptz(3)
 }
 
 model Patient {
@@ -64,8 +74,11 @@ model Patient {
   isActive       Boolean           @default(true)
   userId         String?           @unique @db.Uuid
   user           User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  doctorId       String?           @db.Uuid
+  doctor         Doctor?           @relation(fields: [doctorId], references: [id], onDelete: Restrict)
   appointments   Appointment[]
   treatmentPlans TreatmentPlan[]
+  teeth          PatientTooth[]
   documents      PatientDocument[]
   createdAt      DateTime          @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime          @updatedAt @db.Timestamptz(3)
@@ -73,6 +86,7 @@ model Patient {
   @@index([email])
   @@index([phone])
   @@index([lastName, firstName])
+  @@index([doctorId])
 }
 
 model Doctor {
@@ -86,6 +100,7 @@ model Doctor {
   isActive       Boolean         @default(true)
   userId         String?         @unique @db.Uuid
   user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  patients       Patient[]
   appointments   Appointment[]
   treatmentPlans TreatmentPlan[]
   createdAt      DateTime        @default(now()) @db.Timestamptz(3)
@@ -105,6 +120,21 @@ model Treatment {
   appointments Appointment[]
   createdAt    DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime            @updatedAt @db.Timestamptz(3)
+}
+
+model PatientTooth {
+  id          String              @id @default(uuid()) @db.Uuid
+  patientId   String              @db.Uuid
+  toothNumber Int                 @db.SmallInt
+  status      ToothStatus         @default(HEALTHY)
+  notes       String?             @db.Text
+  patient     Patient             @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  planItems   TreatmentPlanItem[]
+  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime            @updatedAt @db.Timestamptz(3)
+
+  @@unique([patientId, toothNumber])
+  @@index([patientId])
 }
 
 model TreatmentPlan {
@@ -132,31 +162,34 @@ model TreatmentPlanItem {
   id              String        @id @default(uuid()) @db.Uuid
   treatmentPlanId String        @db.Uuid
   treatmentId     String        @db.Uuid
+  patientToothId  String?       @db.Uuid
   treatmentName   String        @db.VarChar(160)
   quantity        Int           @default(1)
   unitPrice       Decimal       @db.Decimal(12, 2)
   treatmentPlan   TreatmentPlan @relation(fields: [treatmentPlanId], references: [id], onDelete: Cascade)
   treatment       Treatment     @relation(fields: [treatmentId], references: [id], onDelete: Restrict)
+  patientTooth    PatientTooth? @relation(fields: [patientToothId], references: [id], onDelete: SetNull)
   createdAt       DateTime      @default(now()) @db.Timestamptz(3)
 
   @@index([treatmentPlanId])
   @@index([treatmentId])
+  @@index([patientToothId])
 }
 
 model Appointment {
-  id        String            @id @default(uuid()) @db.Uuid
-  patientId String            @db.Uuid
-  doctorId  String            @db.Uuid
-  treatmentId String?         @db.Uuid
-  startsAt  DateTime          @db.Timestamptz(3)
-  endsAt    DateTime          @db.Timestamptz(3)
-  status    AppointmentStatus @default(SCHEDULED)
-  note      String?           @db.Text
-  patient   Patient           @relation(fields: [patientId], references: [id], onDelete: Restrict)
-  doctor    Doctor            @relation(fields: [doctorId], references: [id], onDelete: Restrict)
-  treatment Treatment?        @relation(fields: [treatmentId], references: [id], onDelete: Restrict)
-  createdAt DateTime          @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime          @updatedAt @db.Timestamptz(3)
+  id          String            @id @default(uuid()) @db.Uuid
+  patientId   String            @db.Uuid
+  doctorId    String            @db.Uuid
+  treatmentId String?           @db.Uuid
+  startsAt    DateTime          @db.Timestamptz(3)
+  endsAt      DateTime          @db.Timestamptz(3)
+  status      AppointmentStatus @default(SCHEDULED)
+  note        String?           @db.Text
+  patient     Patient           @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  doctor      Doctor            @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+  treatment   Treatment?        @relation(fields: [treatmentId], references: [id], onDelete: Restrict)
+  createdAt   DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime          @updatedAt @db.Timestamptz(3)
 
   @@index([doctorId, startsAt])
   @@index([patientId, startsAt])
@@ -179,18 +212,18 @@ model Payment {
 }
 
 model PatientDocument {
-  id              String   @id @default(uuid()) @db.Uuid
-  patientId       String   @db.Uuid
-  storageProvider String   @db.VarChar(32)
-  storageKey      String   @unique @db.VarChar(512)
-  fileName        String   @db.VarChar(255)
-  mimeType        String   @db.VarChar(127)
-  sizeBytes       BigInt
-  uploadedAt      DateTime @default(now()) @db.Timestamptz(3)
-  uploadedByUserId String?  @db.Uuid
-  deletedAt       DateTime? @db.Timestamptz(3)
-  patient         Patient  @relation(fields: [patientId], references: [id], onDelete: Restrict)
-  uploadedBy      User?    @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  id               String    @id @default(uuid()) @db.Uuid
+  patientId        String    @db.Uuid
+  storageProvider  String    @db.VarChar(32)
+  storageKey       String    @unique @db.VarChar(512)
+  fileName         String    @db.VarChar(255)
+  mimeType         String    @db.VarChar(127)
+  sizeBytes        BigInt
+  uploadedAt       DateTime  @default(now()) @db.Timestamptz(3)
+  uploadedByUserId String?   @db.Uuid
+  deletedAt        DateTime? @db.Timestamptz(3)
+  patient          Patient   @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  uploadedBy       User?     @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
 
   @@index([patientId, uploadedAt])
   @@index([uploadedByUserId, uploadedAt])

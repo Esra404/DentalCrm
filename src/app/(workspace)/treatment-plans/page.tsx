@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { TREATMENT_PLAN_ID_PATTERN } from "@/lib/validations/treatment-plan";
 import { formatMoney, sumPlanItems } from "@/lib/finance/decimal";
 import { requireRoles } from "@/lib/auth/authorization";
+import { getActiveDoctorId } from "@/lib/auth/doctor-access";
 
 const PAGE_SIZE = 25;
 const STATUS_LABELS: Record<TreatmentPlanStatus, string> = {
@@ -38,7 +39,7 @@ export default async function TreatmentPlansPage({
     created?: string | string[];
   }>;
 }) {
-  await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
+  const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
   const params = await searchParams;
   const query = getValue(params.q).trim().slice(0, 120);
   const statusValue = getValue(params.status);
@@ -47,22 +48,33 @@ export default async function TreatmentPlansPage({
   const status = Object.values(TreatmentPlanStatus).find(
     (item) => item === statusValue,
   );
+  const doctorId =
+    user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
   const where: Prisma.TreatmentPlanWhereInput = {
-    ...(status ? { status } : {}),
-    ...(query
-      ? {
-          patient: {
-            is: {
-              OR: [
-                { firstName: { contains: query, mode: "insensitive" } },
-                { lastName: { contains: query, mode: "insensitive" } },
-                { phone: { contains: query } },
-                { email: { contains: query, mode: "insensitive" } },
-              ],
+    AND: [
+      ...(user.role === Role.DOCTOR
+        ? [{
+            patient: {
+              doctorId: doctorId ?? "00000000-0000-0000-0000-000000000000",
             },
-          },
-        }
-      : {}),
+          }]
+        : []),
+      ...(query
+        ? [{
+            patient: {
+              is: {
+                OR: [
+                  { firstName: { contains: query, mode: "insensitive" as const } },
+                  { lastName: { contains: query, mode: "insensitive" as const } },
+                  { phone: { contains: query } },
+                  { email: { contains: query, mode: "insensitive" as const } },
+                ],
+              },
+            },
+          }]
+        : []),
+    ],
+    ...(status ? { status } : {}),
   };
 
   let plans: {

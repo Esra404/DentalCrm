@@ -12,6 +12,7 @@ export type TreatmentPlanItemInput = {
   itemId?: string;
   treatmentId: string;
   quantity: number;
+  toothNumber: number | null;
 };
 
 export type TreatmentPlanFormInput = {
@@ -94,7 +95,12 @@ export function parseTreatmentPlanItems(
       typeof item.quantity !== "number" ||
       !Number.isInteger(item.quantity) ||
       item.quantity < 1 ||
-      item.quantity > 999
+      item.quantity > 999 ||
+      (item.toothNumber !== undefined &&
+        item.toothNumber !== null &&
+        (typeof item.toothNumber !== "number" ||
+          !Number.isInteger(item.toothNumber) ||
+          !/^(1[1-8]|2[1-8]|3[1-8]|4[1-8])$/.test(String(item.toothNumber))))
     ) {
       return {
         success: false,
@@ -112,6 +118,7 @@ export function parseTreatmentPlanItems(
       itemId: typeof item.itemId === "string" ? item.itemId : undefined,
       treatmentId: item.treatmentId,
       quantity: item.quantity,
+      toothNumber: typeof item.toothNumber === "number" ? item.toothNumber : null,
     });
   }
   return { success: true, items };

@@ -4,17 +4,33 @@ import { Role } from "@/generated/prisma/enums";
 import { AppointmentForm } from "@/components/appointments/appointment-form";
 import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/auth/authorization";
+import {
+  doctorPatientWhere,
+  getActiveDoctorId,
+} from "@/lib/auth/doctor-access";
 
 export default async function NewAppointmentPage() {
-  await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
+  const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
+  const doctorId =
+    user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
   const [patients, doctors, treatments] = await Promise.all([
     prisma.patient.findMany({
-      where: { isActive: true },
-      select: { id: true, firstName: true, lastName: true },
+      where: {
+        isActive: true,
+        ...(user.role === Role.DOCTOR
+          ? doctorPatientWhere(doctorId)
+          : {}),
+      },
+      select: { id: true, firstName: true, lastName: true, doctorId: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
     prisma.doctor.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        ...(user.role === Role.DOCTOR
+          ? { id: doctorId ?? "00000000-0000-0000-0000-000000000000" }
+          : {}),
+      },
       select: { id: true, firstName: true, lastName: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
@@ -53,6 +69,7 @@ export default async function NewAppointmentPage() {
             id: patient.id,
             label: `${patient.firstName} ${patient.lastName}`,
             isActive: true,
+            doctorId: patient.doctorId,
           }))}
           treatments={treatments.map((treatment) => ({
             id: treatment.id,

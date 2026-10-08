@@ -99,6 +99,15 @@ export const CRM_MODULES = {
     description: "Sistem işlem kayıtları burada yer alacak.",
     emptyState: "Henüz işlem kaydı bulunmuyor.",
   },
+  users: {
+    href: "/users",
+    label: "Kullanıcılar",
+    group: "Yönetim",
+    icon: UsersRound,
+    roles: [Role.ADMIN],
+    description: "Klinik kullanıcı hesaplarını ve rollerini yönetin.",
+    emptyState: "Henüz kullanıcı bulunmuyor.",
+  },
 } satisfies Record<string, CrmModule>;
 
 export type CrmModuleSlug = keyof typeof CRM_MODULES;

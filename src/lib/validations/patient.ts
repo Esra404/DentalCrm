@@ -6,6 +6,7 @@ export const PATIENT_PHONE_PATTERN = "^\\+?[0-9\\s\\x28\\x29.\\x2d]{7,24}$";
 export type PatientFormInput = {
   firstName: string;
   lastName: string;
+  doctorId: string;
   phone: string;
   email: string;
   dateOfBirth: string;
@@ -20,6 +21,7 @@ export type PatientFieldErrors = Partial<
 export type PatientWriteData = {
   firstName: string;
   lastName: string;
+  doctorId: string;
   phone: string | null;
   email: string | null;
   dateOfBirth: Date | null;
@@ -45,6 +47,7 @@ export function patientInputFromFormData(formData: FormData): PatientFormInput {
   return {
     firstName: read("firstName"),
     lastName: read("lastName"),
+    doctorId: read("doctorId").trim(),
     phone: read("phone"),
     email: read("email"),
     dateOfBirth: read("dateOfBirth"),
@@ -58,6 +61,7 @@ export function validatePatientInput(
 ): PatientValidationResult {
   const firstName = input.firstName.trim();
   const lastName = input.lastName.trim();
+  const doctorId = input.doctorId.trim();
   const phone = input.phone.trim();
   const email = input.email.trim().toLowerCase();
   const dateOfBirth = input.dateOfBirth.trim();
@@ -70,6 +74,10 @@ export function validatePatientInput(
 
   if (!lastName) errors.lastName = "Soyad alanı zorunludur.";
   else if (lastName.length > 100) errors.lastName = "Soyad en fazla 100 karakter olabilir.";
+
+  if (!PATIENT_ID_PATTERN.test(doctorId)) {
+    errors.doctorId = "Sorumlu bir doktor seçin.";
+  }
 
   if (phone) {
     const digitCount = phone.replace(/\D/g, "").length;
@@ -122,6 +130,7 @@ export function validatePatientInput(
     data: {
       firstName,
       lastName,
+      doctorId,
       phone: phone || null,
       email: email || null,
       dateOfBirth: birthDate,

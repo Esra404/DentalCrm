@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { ArrowRight, Eye, Plus, Search, UserRoundPen } from "lucide-react";
 import { Prisma } from "@/generated/prisma/client";
+import { Role } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { requireRoles } from "@/lib/auth/authorization";
+import { getActiveDoctorId } from "@/lib/auth/doctor-access";
 
 const PAGE_SIZE = 25;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -14,6 +17,7 @@ const PATIENT_SELECT = {
   dateOfBirth: true,
   isActive: true,
   createdAt: true,
+  doctor: { select: { id: true, firstName: true, lastName: true } },
 } satisfies Prisma.PatientSelect;
 
 type PatientsPageProps = {
@@ -41,6 +45,7 @@ function makeNextHref(query: string, cursor: string): string {
 }
 
 export default async function PatientsPage({ searchParams }: PatientsPageProps) {
+  const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
   const params = await searchParams;
   const query = getSingleValue(params.q).trim().slice(0, 120);
   const requestedCursor = getSingleValue(params.cursor);
@@ -48,7 +53,7 @@ export default async function PatientsPage({ searchParams }: PatientsPageProps) 
   const created = getSingleValue(params.created) === "1";
   const terms = query.split(/\s+/).filter(Boolean).slice(0, 5);
 
-  const where: Prisma.PatientWhereInput = query
+  const queryWhere: Prisma.PatientWhereInput = query
     ? {
         OR: [
           { firstName: { contains: query, mode: "insensitive" } },
@@ -66,6 +71,13 @@ export default async function PatientsPage({ searchParams }: PatientsPageProps) 
         ],
       }
     : {};
+  const doctorId =
+    user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
+  const doctorWhere: Prisma.PatientWhereInput =
+    user.role === Role.DOCTOR ? { doctorId: doctorId ?? "00000000-0000-0000-0000-000000000000" } : {};
+  const where: Prisma.PatientWhereInput = {
+    AND: [doctorWhere, queryWhere],
+  };
 
   let patients: Prisma.PatientGetPayload<{ select: typeof PATIENT_SELECT }>[] = [];
   let hasMore = false;
@@ -85,7 +97,8 @@ export default async function PatientsPage({ searchParams }: PatientsPageProps) 
 
     hasMore = results.length > PAGE_SIZE;
     patients = results.slice(0, PAGE_SIZE);
-  } catch {
+  } catch (error) {
+    console.error("Hastalar yüklenemedi.", error);
     loadError = true;
   }
 
@@ -190,6 +203,7 @@ export default async function PatientsPage({ searchParams }: PatientsPageProps) 
                     <th className="px-4 py-3.5" scope="col">Ad Soyad</th>
                     <th className="px-4 py-3.5" scope="col">Telefon</th>
                     <th className="px-4 py-3.5" scope="col">E-posta</th>
+                    <th className="px-4 py-3.5" scope="col">Sorumlu Doktor</th>
                     <th className="px-4 py-3.5" scope="col">Doğum Tarihi</th>
                     <th className="px-4 py-3.5" scope="col">Durum</th>
                     <th className="px-4 py-3.5" scope="col">Kayıt Tarihi</th>
@@ -212,6 +226,9 @@ export default async function PatientsPage({ searchParams }: PatientsPageProps) 
                         </th>
                         <td className="px-4 py-4 text-[var(--muted)]">{patient.phone || "—"}</td>
                         <td className="max-w-56 truncate px-4 py-4 text-[var(--muted)]">{patient.email || "—"}</td>
+                        <td className="px-4 py-4 text-[var(--muted)]">
+                          {patient.doctor ? `${patient.doctor.firstName} ${patient.doctor.lastName}` : "Atanmamış"}
+                        </td>
                         <td className="px-4 py-4 text-[var(--muted)]">{formatDate(patient.dateOfBirth)}</td>
                         <td className="px-4 py-4">
                           <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${patient.isActive ? "bg-[#e8f3ed] text-[#28634f]" : "bg-[#edf0ef] text-[#5f6e68]"}`}>

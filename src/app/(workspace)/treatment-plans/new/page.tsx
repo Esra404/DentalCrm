@@ -4,12 +4,20 @@ import { Role } from "@/generated/prisma/enums";
 import { TreatmentPlanForm } from "@/components/treatment-plans/treatment-plan-form";
 import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/auth/authorization";
+import { getActiveDoctorId } from "@/lib/auth/doctor-access";
 
 export default async function NewTreatmentPlanPage() {
-  await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
+  const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
+  const doctorId =
+    user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
   const [patients, treatments] = await Promise.all([
     prisma.patient.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        doctorId: user.role === Role.DOCTOR
+          ? doctorId ?? "00000000-0000-0000-0000-000000000000"
+          : { not: null },
+      },
       select: { id: true, firstName: true, lastName: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),

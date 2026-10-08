@@ -9,6 +9,7 @@ import { requireRoles } from "@/lib/auth/authorization";
 import { sumPlanItems } from "@/lib/finance/decimal";
 import { getChangedFields } from "@/lib/audit/changed-fields";
 import { writeAuditLog } from "@/lib/audit/write-audit-log";
+import { getActiveDoctorId } from "@/lib/auth/doctor-access";
 import {
   TREATMENT_PLAN_ID_PATTERN,
   treatmentPlanInputFromFormData,
@@ -45,20 +46,24 @@ async function writePlan(
   data: ValidatedTreatmentPlanInput,
   planId: string | null,
   userId: string,
+  userRole: Role,
+  authorizedDoctorId: string | null,
 ): Promise<void> {
   await prisma.$transaction(
     async (tx) => {
       const current = planId
         ? await tx.treatmentPlan.findUnique({
             where: { id: planId },
-            include: { items: true },
-          })
+          include: {
+            items: { include: { patientTooth: { select: { toothNumber: true } } } },
+          },
+        })
         : null;
       if (planId && !current) throw new PlanRuleError("Tedavi planı bulunamadı.");
 
       const patient = await tx.patient.findUnique({
         where: { id: data.patientId },
-        select: { id: true, isActive: true },
+        select: { id: true, isActive: true, doctorId: true },
       });
       if (!patient) throw new PlanRuleError("Hasta kaydı bulunamadı.");
       if (!patient.isActive && patient.id !== current?.patientId) {
@@ -66,6 +71,12 @@ async function writePlan(
       }
       if (current && patient.id !== current.patientId) {
         throw new PlanRuleError("Tedavi planı başka bir hastaya aktarılamaz.");
+      }
+      if (userRole === Role.DOCTOR && patient.doctorId !== authorizedDoctorId) {
+        throw new PlanRuleError("Yalnızca sorumlu doktoru olduğunuz hastaya plan oluşturabilirsiniz.");
+      }
+      if (!current && !patient.doctorId) {
+        throw new PlanRuleError("Tedavi planı oluşturmadan önce hastaya sorumlu doktor atayın.");
       }
 
       const existingById = new Map(
@@ -79,9 +90,27 @@ async function writePlan(
         quantity: number;
         unitPrice: Prisma.Decimal;
         currency: string;
+        patientToothId: string | null;
+        toothNumber: number | null;
       }[] = [];
 
       for (const item of data.items) {
+        const patientTooth = item.toothNumber === null
+          ? null
+          : await tx.patientTooth.findUnique({
+              where: {
+                patientId_toothNumber: {
+                  patientId: patient.id,
+                  toothNumber: item.toothNumber,
+                },
+              },
+              select: { id: true, toothNumber: true },
+            });
+        if (item.toothNumber !== null && !patientTooth) {
+          throw new PlanRuleError(
+            `${item.toothNumber} numaralı diş için önce hasta diş kaydı oluşturun.`,
+          );
+        }
         if (item.itemId) {
           const existing = existingById.get(item.itemId);
           if (!existing || existing.treatmentId !== item.treatmentId) {
@@ -95,6 +124,8 @@ async function writePlan(
             quantity: item.quantity,
             unitPrice: existing.unitPrice,
             currency: current?.currency ?? "TRY",
+            patientToothId: patientTooth?.id ?? null,
+            toothNumber: patientTooth?.toothNumber ?? null,
           });
           continue;
         }
@@ -119,6 +150,8 @@ async function writePlan(
           quantity: item.quantity,
           unitPrice: treatment.defaultPrice,
           currency: treatment.currency.trim(),
+          patientToothId: patientTooth?.id ?? null,
+          toothNumber: patientTooth?.toothNumber ?? null,
         });
       }
 
@@ -142,10 +175,10 @@ async function writePlan(
           },
         );
         const currentItems = current.items
-          .map((item) => `${item.id}:${item.quantity}`)
+          .map((item) => `${item.id}:${item.quantity}:${item.patientTooth?.toothNumber ?? ""}`)
           .sort();
         const nextItems = resolvedItems
-          .map((item) => `${item.itemId ?? `new:${item.treatmentId}`}:${item.quantity}`)
+          .map((item) => `${item.itemId ?? `new:${item.treatmentId}`}:${item.quantity}:${item.toothNumber ?? ""}`)
           .sort();
         if (
           currentItems.length !== nextItems.length ||
@@ -185,7 +218,10 @@ async function writePlan(
           if (item.itemId) {
             await tx.treatmentPlanItem.update({
               where: { id: item.itemId },
-              data: { quantity: item.quantity },
+              data: {
+                quantity: item.quantity,
+                patientToothId: item.patientToothId,
+              },
             });
           } else {
             await tx.treatmentPlanItem.create({
@@ -195,6 +231,7 @@ async function writePlan(
                 treatmentName: item.treatmentName,
                 quantity: item.quantity,
                 unitPrice: item.unitPrice,
+                patientToothId: item.patientToothId,
               },
             });
           }
@@ -214,6 +251,7 @@ async function writePlan(
       const plan = await tx.treatmentPlan.create({
         data: {
           patientId: patient.id,
+          createdByDoctorId: userRole === Role.DOCTOR ? authorizedDoctorId : null,
           startsAt: data.startsAt,
           endsAt: data.endsAt,
           status: data.status,
@@ -224,6 +262,7 @@ async function writePlan(
               treatmentName: item.treatmentName,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
+              patientToothId: item.patientToothId,
             })),
           },
         },
@@ -245,6 +284,11 @@ async function mutateTreatmentPlan(
   planId: string | null,
 ): Promise<TreatmentPlanActionState> {
   const user = await requireRoles(...treatmentPlanRoles);
+  const authorizedDoctorId =
+    user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
+  if (user.role === Role.DOCTOR && !authorizedDoctorId) {
+    return { message: "Doktor profiliniz bulunamadı." };
+  }
   const validation = validateTreatmentPlanInput(
     treatmentPlanInputFromFormData(formData),
   );
@@ -257,7 +301,13 @@ async function mutateTreatmentPlan(
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      await writePlan(validation.data, planId, user.id);
+      await writePlan(
+        validation.data,
+        planId,
+        user.id,
+        user.role,
+        authorizedDoctorId,
+      );
       break;
     } catch (error) {
       if (error instanceof PlanRuleError) return { message: error.message };

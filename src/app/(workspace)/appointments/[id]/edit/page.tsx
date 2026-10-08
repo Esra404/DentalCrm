@@ -6,6 +6,10 @@ import { AppointmentForm, type AppointmentOption } from "@/components/appointmen
 import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/auth/authorization";
 import {
+  doctorPatientWhere,
+  getActiveDoctorId,
+} from "@/lib/auth/doctor-access";
+import {
   APPOINTMENT_ID_PATTERN,
   appointmentDateTimeValues,
 } from "@/lib/validations/appointment";
@@ -23,14 +27,26 @@ export default async function EditAppointmentPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
+  const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
   const { id } = await params;
   if (!APPOINTMENT_ID_PATTERN.test(id)) notFound();
+  const assignedDoctorId =
+    user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
 
-  const appointment = await prisma.appointment.findUnique({
-    where: { id },
+  const appointment = await prisma.appointment.findFirst({
+    where: {
+      id,
+      ...(user.role === Role.DOCTOR
+        ? {
+            patient: {
+              doctorId:
+              assignedDoctorId ?? "00000000-0000-0000-0000-000000000000",
+            },
+          }
+        : {}),
+    },
     include: {
-      patient: { select: { id: true, firstName: true, lastName: true, isActive: true } },
+      patient: { select: { id: true, firstName: true, lastName: true, isActive: true, doctorId: true } },
       doctor: { select: { id: true, firstName: true, lastName: true, isActive: true } },
       treatment: { select: { id: true, name: true, isActive: true } },
     },
@@ -39,12 +55,25 @@ export default async function EditAppointmentPage({
 
   const [activePatients, activeDoctors, activeTreatments] = await Promise.all([
     prisma.patient.findMany({
-      where: { isActive: true },
-      select: { id: true, firstName: true, lastName: true },
+      where: {
+        isActive: true,
+        ...(user.role === Role.DOCTOR
+          ? doctorPatientWhere(assignedDoctorId)
+          : {}),
+      },
+      select: { id: true, firstName: true, lastName: true, doctorId: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
     prisma.doctor.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        ...(user.role === Role.DOCTOR
+          ? {
+              id:
+                assignedDoctorId ?? "00000000-0000-0000-0000-000000000000",
+            }
+          : {}),
+      },
       select: { id: true, firstName: true, lastName: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
@@ -62,12 +91,14 @@ export default async function EditAppointmentPage({
       id: patient.id,
       label: `${patient.firstName} ${patient.lastName}`,
       isActive: true,
+      doctorId: patient.doctorId,
     })),
     appointment.patient.isActive
       ? null
       : {
           id: appointment.patient.id,
           label: `${appointment.patient.firstName} ${appointment.patient.lastName}`,
+          doctorId: appointment.patient.doctorId,
         },
   );
   const doctorOptions = addExistingOption(

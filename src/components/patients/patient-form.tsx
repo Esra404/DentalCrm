@@ -14,16 +14,22 @@ import {
   type PatientFieldErrors,
   type PatientFormInput,
 } from "@/lib/validations/patient";
+import { Role } from "@/generated/prisma/enums";
 
+type PatientDoctorOption = { id: string; label: string; isActive: boolean };
 type PatientFormProps = {
   mode: "create" | "edit";
   patientId?: string;
   initialValues?: PatientFormInput;
+  role: Role;
+  doctors: PatientDoctorOption[];
+  assignedDoctorLabel?: string;
 };
 
 const emptyValues: PatientFormInput = {
   firstName: "",
   lastName: "",
+  doctorId: "",
   phone: "",
   email: "",
   dateOfBirth: "",
@@ -43,7 +49,14 @@ function FieldError({ id, message }: { id: string; message?: string }) {
   );
 }
 
-export function PatientForm({ mode, patientId, initialValues }: PatientFormProps) {
+export function PatientForm({
+  mode,
+  patientId,
+  initialValues,
+  role,
+  doctors,
+  assignedDoctorLabel,
+}: PatientFormProps) {
   const [state, formAction, pending] = useActionState(
     mode === "create" ? createPatientAction : updatePatientAction,
     initialState,
@@ -75,6 +88,35 @@ export function PatientForm({ mode, patientId, initialValues }: PatientFormProps
       ) : null}
 
       <div className="grid gap-5 md:grid-cols-2">
+        <label className="flex flex-col gap-2 text-sm font-medium text-[var(--ink)]" htmlFor="doctorId">
+          Sorumlu Doktor <span aria-hidden="true" className="text-red-700">*</span>
+          {role === Role.DOCTOR ? (
+            <>
+              <input name="doctorId" type="hidden" value={values.doctorId} />
+              <span className="flex min-h-11 items-center rounded-md border border-[var(--line)] bg-[#f6f8f7] px-3 text-sm font-normal text-[var(--ink)]">
+                {assignedDoctorLabel ?? "Doktor profiliniz bulunamadı."}
+              </span>
+            </>
+          ) : (
+            <select
+              aria-describedby={fieldErrors.doctorId ? "doctorId-error" : undefined}
+              aria-invalid={Boolean(fieldErrors.doctorId)}
+              className={inputClassName}
+              defaultValue={values.doctorId}
+              id="doctorId"
+              name="doctorId"
+              required
+            >
+              <option value="">Doktor seçin</option>
+              {doctors.map((doctor) => (
+                <option key={doctor.id} value={doctor.id}>
+                  {doctor.label}{doctor.isActive ? "" : " (Pasif - mevcut atama)"}
+                </option>
+              ))}
+            </select>
+          )}
+          <FieldError id="doctorId-error" message={fieldErrors.doctorId} />
+        </label>
         <label className="flex flex-col gap-2 text-sm font-medium text-[var(--ink)]" htmlFor="firstName">
           Ad <span aria-hidden="true" className="text-red-700">*</span>
           <input

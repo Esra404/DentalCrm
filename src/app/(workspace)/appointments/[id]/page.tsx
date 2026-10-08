@@ -9,6 +9,7 @@ import {
 } from "@/lib/validations/appointment";
 import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/auth/authorization";
+import { getActiveDoctorId } from "@/lib/auth/doctor-access";
 
 function formatDateTime(value: Date): string {
   return new Intl.DateTimeFormat("tr-TR", {
@@ -23,12 +24,22 @@ export default async function AppointmentDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
+  const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
   const { id } = await params;
   if (!APPOINTMENT_ID_PATTERN.test(id)) notFound();
+  const doctorId =
+    user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
 
-  const appointment = await prisma.appointment.findUnique({
-    where: { id },
+  const appointment = await prisma.appointment.findFirst({
+    where: {
+      id,
+      ...(user.role === Role.DOCTOR
+        ? {
+            doctorId: doctorId ?? "00000000-0000-0000-0000-000000000000",
+            patient: { doctorId: doctorId ?? "00000000-0000-0000-0000-000000000000" },
+          }
+        : {}),
+    },
     include: {
       patient: {
         select: { id: true, firstName: true, lastName: true },

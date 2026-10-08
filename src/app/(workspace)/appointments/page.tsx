@@ -9,6 +9,7 @@ import {
   parseAppointmentLocalDateTime,
 } from "@/lib/validations/appointment";
 import { requireRoles } from "@/lib/auth/authorization";
+import { getActiveDoctorId } from "@/lib/auth/doctor-access";
 
 const PAGE_SIZE = 25;
 
@@ -42,7 +43,7 @@ export default async function AppointmentsPage({
     created?: string | string[];
   }>;
 }) {
-  await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
+  const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
   const params = await searchParams;
   const query = getValue(params.q).trim().slice(0, 120);
   const date = getValue(params.date);
@@ -62,9 +63,20 @@ export default async function AppointmentsPage({
   )
     ? (statusValue as AppointmentStatus)
     : undefined;
-  const validDoctorId = APPOINTMENT_ID_PATTERN.test(doctorId) ? doctorId : undefined;
+  const assignedDoctorId =
+    user.role === Role.DOCTOR ? await getActiveDoctorId(user.id) : null;
+  const validDoctorId =
+    user.role === Role.DOCTOR
+      ? assignedDoctorId ?? "00000000-0000-0000-0000-000000000000"
+      : APPOINTMENT_ID_PATTERN.test(doctorId)
+        ? doctorId
+        : undefined;
   const terms = query.split(/\s+/).filter(Boolean).slice(0, 5);
   const where: Prisma.AppointmentWhereInput = {
+    AND:
+      user.role === Role.DOCTOR
+        ? [{ patient: { is: { doctorId: validDoctorId } } }]
+        : [],
     ...(startOfDay && startOfNextDay
       ? { startsAt: { gte: startOfDay, lt: startOfNextDay } }
       : {}),
@@ -94,10 +106,13 @@ export default async function AppointmentsPage({
       : {}),
   };
 
-  const doctors = await prisma.doctor.findMany({
-    select: { id: true, firstName: true, lastName: true },
-    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-  });
+  const doctors =
+    user.role === Role.DOCTOR
+      ? []
+      : await prisma.doctor.findMany({
+          select: { id: true, firstName: true, lastName: true },
+          orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+        });
 
   let appointments: Prisma.AppointmentGetPayload<{
     include: {
@@ -162,7 +177,7 @@ export default async function AppointmentsPage({
           <input className="min-h-11 w-full rounded-md border border-[var(--line)] bg-white pl-10 pr-3 text-sm text-[var(--ink)] outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15" defaultValue={query} maxLength={120} name="q" placeholder="Hasta ara..." type="search" />
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">Tarih<input className="min-h-11 rounded-md border border-[var(--line)] bg-white px-3 text-sm text-[var(--ink)]" defaultValue={date} name="date" type="date" /></label>
-        <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">Doktor<select className="min-h-11 rounded-md border border-[var(--line)] bg-white px-3 text-sm text-[var(--ink)]" defaultValue={validDoctorId ?? ""} name="doctorId"><option value="">Tüm doktorlar</option>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.firstName} {doctor.lastName}</option>)}</select></label>
+        {user.role !== Role.DOCTOR ? <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">Doktor<select className="min-h-11 rounded-md border border-[var(--line)] bg-white px-3 text-sm text-[var(--ink)]" defaultValue={validDoctorId ?? ""} name="doctorId"><option value="">Tüm doktorlar</option>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.firstName} {doctor.lastName}</option>)}</select></label> : null}
         <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">Durum<select className="min-h-11 rounded-md border border-[var(--line)] bg-white px-3 text-sm text-[var(--ink)]" defaultValue={validStatus ?? ""} name="status"><option value="">Tüm durumlar</option>{Object.values(AppointmentStatus).map((status) => <option key={status} value={status}>{APPOINTMENT_STATUS_LABELS[status]}</option>)}</select></label>
         <button className="inline-flex min-h-11 items-center justify-center self-end rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium text-[var(--ink)] outline-none hover:bg-[var(--canvas)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]" type="submit">Filtrele</button>
       </form>

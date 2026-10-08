@@ -2,6 +2,7 @@ import { Role } from "@/generated/prisma/enums";
 import { requireRoles } from "@/lib/auth/authorization";
 import { readLocalDocument } from "@/lib/documents/storage";
 import { prisma } from "@/lib/prisma";
+import { canDoctorAccessPatient } from "@/lib/auth/doctor-access";
 import {
   PATIENT_DOCUMENT_ID_PATTERN,
   PATIENT_DOCUMENT_MIME_TYPES,
@@ -25,11 +26,17 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string; documentId: string }> },
 ) {
-  await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
+  const user = await requireRoles(Role.ADMIN, Role.STAFF, Role.DOCTOR);
   const { id, documentId } = await params;
   if (
     !PATIENT_DOCUMENT_ID_PATTERN.test(id) ||
     !PATIENT_DOCUMENT_ID_PATTERN.test(documentId)
+  ) {
+    return new Response("Belge bulunamadı.", { status: 404 });
+  }
+  if (
+    user.role === Role.DOCTOR &&
+    !(await canDoctorAccessPatient(user.id, id))
   ) {
     return new Response("Belge bulunamadı.", { status: 404 });
   }

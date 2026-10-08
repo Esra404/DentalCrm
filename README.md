@@ -16,6 +16,35 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Yerel veritabanı, ilk yönetici ve tedavi kataloğu
+
+`.env.example` dosyasını `.env` olarak kopyalayın, yerel PostgreSQL bağlantısını
+ve `AUTH_SECRET` değerini ayarlayın. Şema migration'larını uyguladıktan sonra ilk
+yönetici hesabını güvenli şekilde oluşturmak için:
+
+```powershell
+npm run dev:create-admin
+```
+
+Komut yalnızca yerel `dental_crm` veritabanını kabul eder; e-posta ve şifreyi
+interaktif terminalden alır, şifreyi ekranda göstermez ve yalnızca hash'ini saklar.
+İsteğe bağlı başlangıç tedavi kataloğunu eklemek için:
+
+```powershell
+npm run db:seed
+```
+
+Katalog tedavileri başlangıçta pasiftir ve fiyatı `0` olarak eklenir; kliniğin
+gerçek fiyatlarını ayarlayıp tedavileri ayrıca etkinleştirin. Bu komut da yalnızca
+yerel `dental_crm` veritabanında çalışır. Geliştirme sunucusunu `npm run dev` ile
+başlatın ve `/login` sayfasından yönetici hesabınızla giriş yapın. Başarılı giriş
+`/dashboard` adresine yönlendirir. İzin kontrolleri sunucu tarafında `requireRole`
+/ `requireRoles` yardımcılarıyla yapılmalıdır.
+
+Yönetici, oturum açtıktan sonra `/users` sayfasından Doktor veya Çalışan hesabı
+oluşturabilir. Doktor hesabı ve `Doctor` CRM profili aynı veritabanı transaction'ı
+içinde `User.id` üzerinden bağlanır; Doctor uzmanlık alanı isteğe bağlıdır.
+
 ## Hasta Belgeleri
 
 Hasta dosyaları PostgreSQL'e veya `public` klasörüne yazılmaz; yerel geliştirmede

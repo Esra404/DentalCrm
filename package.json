@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:create-admin": "node --env-file=.env --import=tsx scripts/create-dev-admin.ts",
+    "db:seed": "node --env-file=.env --import=tsx prisma/seed.ts",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint"

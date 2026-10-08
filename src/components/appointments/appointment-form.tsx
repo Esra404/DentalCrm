@@ -20,6 +20,7 @@ export type AppointmentOption = {
   id: string;
   label: string;
   isActive: boolean;
+  doctorId?: string | null;
 };
 
 type AppointmentFormProps = {
@@ -59,9 +60,13 @@ export function AppointmentForm({
     mode === "create" ? createAppointmentAction : updateAppointmentAction,
     initialState,
   );
-  const [clientErrors, setClientErrors] = useState<AppointmentFieldErrors>({});
-  const errors = { ...state.fieldErrors, ...clientErrors };
   const values = initialValues ?? emptyValues;
+  const [clientErrors, setClientErrors] = useState<AppointmentFieldErrors>({});
+  const [selectedPatientId, setSelectedPatientId] = useState(values.patientId);
+  const errors = { ...state.fieldErrors, ...clientErrors };
+  const selectedPatient = patients.find((patient) => patient.id === selectedPatientId);
+  const assignedDoctorId = selectedPatient?.doctorId ?? "";
+  const assignedDoctor = doctors.find((doctor) => doctor.id === assignedDoctorId);
 
   function validateOnClient(event: FormEvent<HTMLFormElement>) {
     const result = validateAppointmentInput(
@@ -80,23 +85,24 @@ export function AppointmentForm({
       {mode === "edit" && appointmentId ? (
         <input name="appointmentId" type="hidden" value={appointmentId} />
       ) : null}
+      <input name="doctorId" type="hidden" value={assignedDoctorId} />
       <div className="grid gap-5 md:grid-cols-2">
         <SelectField
           error={errors.patientId}
           id="patientId"
           label="Hasta"
           options={patients}
+          onChange={setSelectedPatientId}
           required
           value={values.patientId}
         />
-        <SelectField
-          error={errors.doctorId}
-          id="doctorId"
-          label="Doktor"
-          options={doctors}
-          required
-          value={values.doctorId}
-        />
+        <div className="flex flex-col gap-2 text-sm font-medium text-[var(--ink)]">
+          <span>Sorumlu Doktor</span>
+          <span className="flex min-h-11 items-center rounded-md border border-[var(--line)] bg-[#f6f8f7] px-3 text-sm font-normal text-[var(--ink)]">
+            {assignedDoctor?.label ?? "Seçilen hastaya atanmış aktif doktor yok."}
+          </span>
+          {errors.doctorId ? <span className="text-sm font-normal text-red-700" role="alert">{errors.doctorId}</span> : null}
+        </div>
         <SelectField
           error={errors.treatmentId}
           id="treatmentId"
@@ -202,6 +208,7 @@ function SelectField({
   options,
   required,
   value,
+  onChange,
 }: {
   error?: string;
   id: string;
@@ -209,6 +216,7 @@ function SelectField({
   options: AppointmentOption[];
   required?: boolean;
   value: string;
+  onChange?: (value: string) => void;
 }) {
   const errorId = `${id}-error`;
 
@@ -222,6 +230,7 @@ function SelectField({
         defaultValue={value}
         id={id}
         name={id}
+        onChange={onChange ? (event) => onChange(event.currentTarget.value) : undefined}
         required={required}
       >
         <option value="">Seçiniz</option>
